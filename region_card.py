@@ -4,10 +4,23 @@ from typing import List, Optional
 from PyQt6 import QtCore, QtGui, QtWidgets
 from style_utils import mac_default_font, gradient_for_temp
 
+def _fmt_pct_de(x: float | None) -> str:
+    if x is None:
+        return "—"
+    return f"{x:.1f}".replace(".", ",") + " %"
+
 class RegionCard(QtWidgets.QFrame):
-    def __init__(self, region: str, states: List[str],
-                 temp_mean: Optional[float], precip_sum: Optional[float],
-                 stations_day_max: int, stations_total: int, parent=None):
+    def __init__(
+        self,
+        region: str,
+        states: List[str],
+        temp_mean: Optional[float],
+        precip_sum: Optional[float],
+        stations_day_max: int,
+        stations_total: int,
+        population_share_pct: Optional[float] = None,   # ← NEU
+        parent=None,
+    ):
         super().__init__(parent)
         self.setObjectName("RegionCard")
         c1, c2, c_border = gradient_for_temp(temp_mean)
@@ -20,8 +33,10 @@ class RegionCard(QtWidgets.QFrame):
             QLabel[cls="title"] {{ color:#1C1C1E; font-weight:700; }}
             QLabel[cls="line"]  {{ color:#0E1116; }}
         """)
+
         main = QtWidgets.QHBoxLayout(self)
-        main.setContentsMargins(16, 14, 16, 14); main.setSpacing(18)
+        main.setContentsMargins(16, 14, 16, 14)
+        main.setSpacing(18)
 
         left = QtWidgets.QVBoxLayout(); left.setSpacing(6)
         right = QtWidgets.QVBoxLayout(); right.setSpacing(6)
@@ -48,6 +63,7 @@ class RegionCard(QtWidgets.QFrame):
         line2.setProperty("cls", "line"); line2.setFont(mac_default_font()); left.addWidget(line2)
         left.addStretch(1)
 
+        # Rechte Spalte: Bundesländer + Bevölkerungsanteil (rechtsbündig, hellgrau)
         bl_text = "\n".join(states) if states else "—"
         bl_list = QtWidgets.QLabel(bl_text)
         bl_list.setFont(mac_default_font())
@@ -56,7 +72,15 @@ class RegionCard(QtWidgets.QFrame):
         bl_list.setWordWrap(True)
         right.addWidget(bl_list, 1)
 
-        main.addLayout(left, 2); main.addLayout(right, 1)
+        pct_text = f"≈ {_fmt_pct_de(population_share_pct)} der Bevölkerung in Deutschland"
+        pct = QtWidgets.QLabel(pct_text)
+        pct.setFont(mac_default_font())
+        pct.setStyleSheet("color:#6E6E73;")
+        pct.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
+        right.addWidget(pct, 0, QtCore.Qt.AlignmentFlag.AlignRight)
+
+        main.addLayout(left, 2)
+        main.addLayout(right, 1)
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(18); shadow.setOffset(0, 3); shadow.setColor(QtGui.QColor(0,0,0,30))

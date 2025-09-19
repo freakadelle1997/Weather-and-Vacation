@@ -16,7 +16,7 @@ pip install PyQt6 wetterdienst pandas polars tzdata certifi
 
 App starten
 
-    python dwd_regions_gui.py
+    python app.py
 
 
 -----------------
