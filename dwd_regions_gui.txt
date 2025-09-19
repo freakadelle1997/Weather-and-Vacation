@@ -1,0 +1,994 @@
+# dwd_regions_gui.py — DWD Regions (native PyQt6)
+# - Datumseingabe per Text (TT.MM.JJJJ) + Enter startet Berechnung
+# - Live-Status + ETA unter Progressbar
+# - Zeitraum-Zusammenfassung als Kacheln (Gradient je Temperatur) mit rechts stehenden Bundesländern (hellgrau, rechtsbündig)
+# - Tägliche Mittelwerte: Unter-Tabs je Region (Datum ↓, formatiert) — Tabs erst sichtbar, wenn Zeitraum > 1 Tag
+# - CSV-Export (tägliche Werte), Cache leeren (~/.cache/wetterdienst)
+# - "Verwendete Stationen" als rechtsbündiger Button (Breite ≈ Cache+Berechnen); öffnet Popup mit Tabelle & Export
+# - Robustes Laden (Batch → stationweise → stationweise ohne Cache)
+# - Single-Instance-Lock + Fetch-Guard
+# - Globaler Exception-Hook + Logging nach ~/Library/Logs/Wetterdaten/app.log
+from __future__ import annotations
+
+import sys
+import os
+import re
+import time
+import shutil
+from pathlib import Path
+import datetime as dt
+from typing import List, Tuple, Optional, Dict
+
+# ---- Single-Instance-Lock (macOS/Linux) ----
+import tempfile
+import fcntl
+
+LOCKFILE_PATH = str(Path(tempfile.gettempdir()) / "wetterdaten_app.lock")
+
+def acquire_single_instance_lock() -> Optional[int]:
+    try:
+        fd = os.open(LOCKFILE_PATH, os.O_CREAT | os.O_RDWR)
+        fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+    except Exception:
+        return None
+
+# ---- Logging & Exception-Hook ----
+import logging, traceback
+
+LOG_DIR = Path.home() / "Library" / "Logs" / "Wetterdaten"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / "app.log"
+logging.basicConfig(
+    filename=str(LOG_FILE),
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
+def install_excepthook():
+    def _hook(exctype, value, tb):
+        msg = "".join(traceback.format_exception(exctype, value, tb))
+        logging.error("Uncaught exception:\n%s", msg)
+        try:
+            from PyQt6 import QtWidgets
+            QtWidgets.QMessageBox.critical(
+                None,
+                "Unerwarteter Fehler",
+                "Die Anwendung hat einen Fehler abgefangen und bleibt geöffnet.\n\n"
+                f"Details wurden nach {LOG_FILE} geschrieben.\n\n"
+                f"{str(value)}"
+            )
+        except Exception:
+            pass
+    sys.excepthook = _hook
+
+import pandas as pd
+from PyQt6 import QtCore, QtGui, QtWidgets
+
+from wetterdienst.settings import Settings
+from wetterdienst.provider.dwd.observation import DwdObservationRequest
+
+
+# -------------------- Konstanten & Utils --------------------
+
+REGIONS: Dict[str, List[str]] = {
+    "Nord": ["Schleswig-Holstein", "Bremen", "Hamburg", "Niedersachsen"],
+    "Ost": ["Berlin", "Brandenburg", "Sachsen-Anhalt", "Thüringen", "Sachsen"],
+    "Süd": ["Bayern", "Baden-Württemberg"],
+    "West": ["Saarland", "Rheinland-Pfalz", "Nordrhein-Westfalen"],
+}
+REGION_ORDER = ["Nord", "Ost", "Süd", "West"]
+
+
+def _as_pandas(df_like):
+    try:
+        if df_like.__class__.__module__.startswith("polars"):
+            return df_like.to_pandas()
+    except Exception:
+        pass
+    return df_like
+
+
+def _select_by_ids(req: DwdObservationRequest, station_ids: List[str]):
+    try:
+        return req.filter_by_station_id(station_id=tuple(station_ids))
+    except AttributeError:
+        stations_all = req.all()
+        return stations_all.filter_by_station_id(station_id=tuple(station_ids))
+
+
+def get_stations_df(start_dt: dt.datetime, end_dt: dt.datetime) -> pd.DataFrame:
+    logging.info("get_stations_df(%s, %s)", start_dt, end_dt)
+    req = DwdObservationRequest(
+        parameters=[("daily", "climate_summary", "temperature_air_mean_2m")],
+        start_date=start_dt,
+        end_date=end_dt,
+        settings=Settings(cache_disable=False),
+    )
+    df = _as_pandas(req.all().df).copy()
+    for c in ("start_date", "end_date"):
+        if c in df.columns:
+            df[c] = pd.to_datetime(df[c], utc=True, errors="coerce").dt.tz_convert(None)
+    if "station_id" in df.columns:
+        df["station_id"] = df["station_id"].astype(str)
+    logging.info("get_stations_df -> %d Zeilen", len(df))
+    return df
+
+
+def get_values_df(
+    station_ids: Tuple[str, ...],
+    start_dt: dt.datetime,
+    end_dt: dt.datetime,
+) -> pd.DataFrame:
+    logging.info("get_values_df(%d stationen, %s..%s)", len(station_ids), start_dt, end_dt)
+    # 1) Batch mit Cache
+    req = DwdObservationRequest(
+        parameters=[
+            ("daily", "climate_summary", "temperature_air_mean_2m"),
+            ("daily", "climate_summary", "precipitation_height"),
+        ],
+        start_date=start_dt,
+        end_date=end_dt,
+        settings=Settings(cache_disable=False),
+    )
+    try:
+        sel = _select_by_ids(req, list(station_ids))
+        vdf = _as_pandas(sel.values.all().df)
+        if vdf is not None and len(vdf) > 0:
+            logging.info("get_values_df batch success: %d Zeilen", len(vdf))
+            return vdf
+    except Exception as e:
+        logging.warning("get_values_df batch fail: %s", e)
+
+    # 2) stationweise, erst mit Cache, dann ohne Cache
+    parts = []
+    for sid in station_ids:
+        try:
+            sel1 = _select_by_ids(req, [sid])
+            v1 = _as_pandas(sel1.values.all().df)
+            if v1 is not None and len(v1) > 0:
+                parts.append(v1)
+                continue
+        except Exception as e:
+            logging.debug("Station %s mit Cache fehlgeschlagen: %s", sid, e)
+        try:
+            req_nc = DwdObservationRequest(
+                parameters=[
+                    ("daily", "climate_summary", "temperature_air_mean_2m"),
+                    ("daily", "climate_summary", "precipitation_height"),
+                ],
+                start_date=start_dt,
+                end_date=end_dt,
+                settings=Settings(cache_disable=True),
+            )
+            sel2 = _select_by_ids(req_nc, [sid])
+            v2 = _as_pandas(sel2.values.all().df)
+            if v2 is not None and len(v2) > 0:
+                parts.append(v2)
+        except Exception as e:
+            logging.debug("Station %s ohne Cache fehlgeschlagen: %s", sid, e)
+
+    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
+    logging.info("get_values_df stationwise -> %d Zeilen", len(out))
+    return out
+
+
+def mac_default_font():
+    return QtGui.QFont(".AppleSystemUIFont", 13)
+
+
+def style_line_edit(le: QtWidgets.QLineEdit):
+    le.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+    le.setMinimumWidth(140)
+    le.setFont(mac_default_font())
+    le.setStyleSheet("""
+        QLineEdit {
+            border: 1px solid #DADADA;
+            border-radius: 10px;
+            padding: 6px 12px;
+            background: #FBFBFD;
+            color: #111111;
+            selection-background-color: #0A84FF;
+            selection-color: #FFFFFF;
+        }
+        QLineEdit:focus { border: 1px solid #0A84FF; }
+    """)
+
+
+DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
+
+def parse_german_date(s: str) -> dt.date:
+    s = s.strip()
+    if not DATE_RE.match(s):
+        raise ValueError("Bitte Datum im Format TT.MM.JJJJ eingeben.")
+    try:
+        return dt.datetime.strptime(s, "%d.%m.%Y").date()
+    except Exception:
+        raise ValueError("Ungültiges Datum (z. B. 31.02.2023).")
+
+
+# -------------------- Qt: PandasModel --------------------
+
+class PandasModel(QtCore.QAbstractTableModel):
+    def __init__(self, df: pd.DataFrame, formatters: Optional[dict] = None, parent=None):
+        super().__init__(parent)
+        self._df = df.reset_index(drop=True).copy()
+        self._formatters = formatters or {}
+
+    def rowCount(self, parent=QtCore.QModelIndex()):
+        return len(self._df)
+
+    def columnCount(self, parent=QtCore.QModelIndex()):
+        return len(self._df.columns)
+
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            val = self._df.iat[index.row(), index.column()]
+            col = self._df.columns[index.column()]
+            fmt = self._formatters.get(col)
+            if pd.isna(val):
+                return ""
+            if fmt:
+                try:
+                    return fmt(val)
+                except Exception:
+                    return str(val)
+            return str(val)
+        return None
+
+    def headerData(self, section, orientation, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if role != QtCore.Qt.ItemDataRole.DisplayRole:
+            return None
+        if orientation == QtCore.Qt.Orientation.Horizontal:
+            return str(self._df.columns[section])
+        else:
+            return str(section + 1)
+
+    def setDataFrame(self, df: pd.DataFrame):
+        self.beginResetModel()
+        self._df = df.reset_index(drop=True).copy()
+        self.endResetModel()
+
+    def dataframe(self) -> pd.DataFrame:
+        return self._df.copy()
+
+
+# -------------------- Tabellen-Autosizing --------------------
+
+def autosize_columns(view: QtWidgets.QTableView):
+    header = view.horizontalHeader()
+    header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+    view.resizeColumnsToContents()
+    header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+    header.setStretchLastSection(False)
+
+
+# -------------------- Farblogik & Utilities --------------------
+
+def _hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def _rgb_to_hex(rgb: Tuple[int, int, int]) -> str:
+    return "#{:02X}{:02X}{:02X}".format(*rgb)
+
+def _mix_with_white(hex_color: str, factor: float) -> str:
+    """factor: 0 -> original, 1 -> weiß"""
+    r, g, b = _hex_to_rgb(hex_color)
+    r = int(r + (255 - r) * factor)
+    g = int(g + (255 - g) * factor)
+    b = int(b + (255 - b) * factor)
+    return _rgb_to_hex((r, g, b))
+
+def _base_color_for_temp(temp: Optional[float]) -> str:
+    if temp is None or pd.isna(temp):
+        return "#6E6E73"  # gray
+    t = float(temp)
+    if t <= 0:   return "#0A84FF"  # blue
+    if t <= 10:  return "#32ADE6"  # blue-cyan
+    if t <= 20:  return "#34C759"  # green
+    if t <= 25:  return "#FF9F0A"  # orange
+    return "#FF453A"              # red
+
+def gradient_for_temp(temp: Optional[float]) -> Tuple[str, str, str]:
+    base = _base_color_for_temp(temp)
+    start = _mix_with_white(base, 0.75)  # sehr hell
+    end   = _mix_with_white(base, 0.55)  # etwas kräftiger
+    border = _mix_with_white(base, 0.35) # dezente Umrandung
+    return start, end, border
+
+
+# -------------------- Kachel-UI --------------------
+
+class RegionCard(QtWidgets.QFrame):
+    def __init__(self, region: str, states: List[str],
+                 temp_mean: Optional[float], precip_sum: Optional[float],
+                 stations_day_max: int, stations_total: int, parent=None):
+        super().__init__(parent)
+        self.setObjectName("RegionCard")
+
+        c1, c2, c_border = gradient_for_temp(temp_mean)
+
+        self.setStyleSheet(f"""
+            QFrame#RegionCard {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                            stop:0 {c1}, stop:1 {c2});
+                border: 1px solid {c_border};
+                border-radius: 14px;
+            }}
+            QLabel[cls="title"] {{ color:#1C1C1E; font-weight:700; }}
+            QLabel[cls="muted"] {{ color:#3A3A3C; }}
+            QLabel[cls="line"]  {{ color:#0E1116; }}
+        """)
+
+        main = QtWidgets.QHBoxLayout(self)
+        main.setContentsMargins(16, 14, 16, 14)
+        main.setSpacing(18)
+
+        left = QtWidgets.QVBoxLayout(); left.setSpacing(6)
+        right = QtWidgets.QVBoxLayout(); right.setSpacing(6)
+
+        title = QtWidgets.QLabel(region); title.setProperty("cls", "title"); title.setFont(mac_default_font())
+        left.addWidget(title)
+
+        if temp_mean is None or pd.isna(temp_mean):
+            big_text = "—"
+        else:
+            big_text = f"{float(temp_mean):.1f} °C"
+        big = QtWidgets.QLabel(big_text)
+        big.setFont(mac_default_font())
+        big.setStyleSheet("font-size:26px; font-weight:800; color:#0E1116;")
+        left.addWidget(big)
+
+        if precip_sum is None or pd.isna(precip_sum) or float(precip_sum) <= 0.0:
+            sub_text = "Σ Niederschlag: —"
+            sub_style = "color:#3A3A3C;"
+        else:
+            sub_text = f"Σ Niederschlag: {float(precip_sum):.2f} mm"
+            sub_style = "color:#0A84FF; font-weight:600;"
+        sub = QtWidgets.QLabel(sub_text); sub.setStyleSheet(sub_style); sub.setFont(mac_default_font())
+        left.addWidget(sub)
+
+        line1 = QtWidgets.QLabel(f"max. Stationsanzahl/Tag: {int(stations_day_max or 0)}")
+        line1.setProperty("cls", "line"); line1.setFont(mac_default_font()); left.addWidget(line1)
+
+        line2 = QtWidgets.QLabel(f"berücksichtigte Stationen: {int(stations_total or 0)}")
+        line2.setProperty("cls", "line"); line2.setFont(mac_default_font()); left.addWidget(line2)
+
+        left.addStretch(1)
+
+        # Rechte Spalte: Bundesländer (ohne Überschrift/Listenpunkte, hellgrau, rechtsbündig)
+        bl_text = "\n".join(states) if states else "—"
+        bl_list = QtWidgets.QLabel(bl_text)
+        bl_list.setFont(mac_default_font())
+        bl_list.setStyleSheet("color:#6E6E73;")  # hellgrau
+        bl_list.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignRight)
+        bl_list.setWordWrap(True)
+        right.addWidget(bl_list, 1)
+
+        main.addLayout(left, 2)
+        main.addLayout(right, 1)
+
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(18); shadow.setOffset(0, 3); shadow.setColor(QtGui.QColor(0,0,0,30))
+        self.setGraphicsEffect(shadow)
+
+
+# -------------------- Stations-Dialog --------------------
+
+class StationsDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Verwendete Stationen")
+        self.resize(920, 620)
+
+        vbox = QtWidgets.QVBoxLayout(self)
+        vbox.setContentsMargins(12, 12, 12, 12)
+        vbox.setSpacing(8)
+
+        self.table = QtWidgets.QTableView(self)
+        self.table.verticalHeader().setVisible(False)
+        self.table.horizontalHeader().setSectionResizeMode(
+            QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+        )
+        vbox.addWidget(self.table, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        self.btn_export = QtWidgets.QPushButton("CSV exportieren")
+        self.btn_close = QtWidgets.QPushButton("Schließen")
+        self.btn_close.clicked.connect(self.accept)
+        btn_row.addWidget(self.btn_export)
+        btn_row.addWidget(self.btn_close)
+        vbox.addLayout(btn_row)
+
+        self.model = PandasModel(pd.DataFrame())
+        self.table.setModel(self.model)
+        self.btn_export.clicked.connect(self._export_csv)
+
+    def set_dataframe(self, df: pd.DataFrame):
+        self.model.setDataFrame(df)
+        autosize_columns(self.table)
+
+    def _export_csv(self):
+        df = self.model.dataframe()
+        if df.empty:
+            QtWidgets.QMessageBox.information(self, "Export", "Keine Stationenliste vorhanden.")
+            return
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "CSV speichern", "stationen_mit_werten.csv", "CSV (*.csv)"
+        )
+        if path:
+            df.to_csv(path, index=False)
+
+
+# -------------------- Worker (Thread) --------------------
+
+class FetchWorker(QtCore.QObject):
+    progress = QtCore.pyqtSignal(int, int, str)
+    finished = QtCore.pyqtSignal(pd.DataFrame, pd.DataFrame, pd.DataFrame)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, start_date: dt.date, end_date: dt.date):
+        super().__init__()
+        self.start_date = start_date
+        self.end_date = end_date
+
+    @QtCore.pyqtSlot()
+    def run(self):
+        try:
+            start_dt_py = dt.datetime.combine(self.start_date, dt.time.min)
+            end_dt_py = dt.datetime.combine(self.end_date, dt.time.max)
+            start_ts = pd.Timestamp(start_dt_py)
+            end_ts = pd.Timestamp(end_dt_py)
+
+            total_steps = 1 + len(REGIONS)
+            done = 0
+            self.progress.emit(done, total_steps, "Stationsliste laden…")
+
+            sdf = get_stations_df(start_dt_py, end_dt_py)
+            sdf = sdf[(sdf["end_date"] >= start_ts) & (sdf["start_date"] <= end_ts)].copy()
+
+            done += 1
+            self.progress.emit(done, total_steps, "Stationsliste geladen")
+
+            region_summaries, daily_tables, used_station_meta = [], [], []
+
+            for region_name, states in REGIONS.items():
+                self.progress.emit(done, total_steps, f"Werte für {region_name} laden…")
+
+                sdf_region = sdf[sdf["state"].isin(states)].copy()
+                station_ids = sdf_region["station_id"].dropna().unique().tolist()
+
+                if not station_ids:
+                    done += 1
+                    self.progress.emit(done, total_steps, f"{region_name} übersprungen (keine Stationen)")
+                    continue
+
+                vdf = get_values_df(tuple(station_ids), start_dt_py, end_dt_py)
+                if vdf is None or len(vdf) == 0:
+                    done += 1
+                    self.progress.emit(done, total_steps, f"{region_name} ohne Werte")
+                    continue
+
+                if "date" in vdf.columns:
+                    vdf["date"] = pd.to_datetime(vdf["date"], utc=True, errors="coerce").dt.tz_convert(None)
+                if "station_id" in vdf.columns:
+                    vdf["station_id"] = vdf["station_id"].astype(str)
+
+                wide = (
+                    vdf.pivot_table(
+                        values="value",
+                        index=["date", "station_id"],
+                        columns="parameter",
+                        aggfunc="mean",
+                    ).reset_index()
+                )
+
+                temp_days = (
+                    wide.dropna(subset=["temperature_air_mean_2m"])
+                    .groupby("station_id")["date"].nunique().rename("temp_days")
+                    if "temperature_air_mean_2m" in wide.columns else pd.Series(dtype="int64")
+                )
+                precip_days = (
+                    wide.dropna(subset=["precipitation_height"])
+                    .groupby("station_id")["date"].nunique().rename("precip_days")
+                    if "precipitation_height" in wide.columns else pd.Series(dtype="int64")
+                )
+                temp_mean = (
+                    wide.groupby("station_id")["temperature_air_mean_2m"].mean().rename("temp_mean_C_period")
+                    if "temperature_air_mean_2m" in wide.columns else pd.Series(dtype="float")
+                )
+                precip_sum = (
+                    wide.groupby("station_id")["precipitation_height"].sum().rename("precip_sum_mm_period")
+                    if "precipitation_height" in wide.columns else pd.Series(dtype="float")
+                )
+                date_min = wide.groupby("station_id")["date"].min().rename("first_date")
+                date_max = wide.groupby("station_id")["date"].max().rename("last_date")
+                per_station_agg = pd.concat(
+                    [temp_mean, precip_sum, temp_days, precip_days, date_min, date_max], axis=1
+                ).reset_index()
+
+                daily_mean = (
+                    wide.groupby("date", as_index=False).agg(
+                        temp_mean_C=("temperature_air_mean_2m", "mean"),
+                        precip_mm=("precipitation_height", "mean"),
+                        stations_used=("station_id", "nunique"),
+                    )
+                )
+                daily_mean["region"] = region_name
+                daily_tables.append(daily_mean)
+
+                summary = pd.DataFrame(
+                    {
+                        "Region": [region_name],
+                        "Ø Temperatur (°C)": [pd.to_numeric(daily_mean["temp_mean_C"], errors="coerce").mean()],
+                        "Σ Niederschlag (mm)": [pd.to_numeric(daily_mean["precip_mm"], errors="coerce").sum()],
+                        "max. Stationsanzahl/Tag": [int(pd.to_numeric(daily_mean["stations_used"], errors="coerce").max() or 0)],
+                        "berücksichtigte Stationen (Anzahl)": [len(station_ids)],
+                    }
+                )
+                region_summaries.append(summary)
+
+                meta_cols = ["station_id", "name", "state", "height", "latitude", "longitude", "start_date", "end_date"]
+                meta_base = (
+                    sdf_region[meta_cols].drop_duplicates(subset=["station_id"])
+                    if all(c in sdf_region.columns for c in meta_cols)
+                    else sdf_region.drop_duplicates(subset=["station_id"])
+                )
+                meta_enriched = meta_base.merge(per_station_agg, on="station_id", how="left").assign(region=region_name)
+                used_station_meta.append(meta_enriched[["region"] + [c for c in meta_enriched.columns if c != "region"]])
+
+                done += 1
+                self.progress.emit(done, total_steps, f"{region_name} fertig")
+
+            if region_summaries:
+                summary_all = pd.concat(region_summaries, ignore_index=True)
+                daily_all = pd.concat(daily_tables, ignore_index=True)
+                stations_all = pd.concat(used_station_meta, ignore_index=True) if used_station_meta else pd.DataFrame()
+            else:
+                summary_all = pd.DataFrame(); daily_all = pd.DataFrame(); stations_all = pd.DataFrame()
+
+            self.finished.emit(summary_all, daily_all, stations_all)
+
+        except BaseException as e:
+            msg = f"{e}\n\n{traceback.format_exc()}"
+            logging.error("Worker.run crashed: %s", msg)
+            self.error.emit(str(e))
+
+
+# -------------------- Hauptfenster --------------------
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("DWD Regions")
+        self.resize(1100, 820)
+        self.setFont(mac_default_font())
+
+        self.worker_thread: Optional[QtCore.QThread] = None
+        self.worker: Optional[FetchWorker] = None
+        self.stations_dialog: Optional[StationsDialog] = None
+
+        try:
+            from PyQt6.QtWidgets import QStyleFactory
+            if "macOS" in QStyleFactory.keys():
+                QtWidgets.QApplication.setStyle("macOS")
+            else:
+                QtWidgets.QApplication.setStyle("Fusion")
+        except Exception:
+            pass
+
+        central = QtWidgets.QWidget()
+        self.setCentralWidget(central)
+        vbox = QtWidgets.QVBoxLayout(central)
+        vbox.setContentsMargins(16, 16, 16, 16)
+        vbox.setSpacing(12)
+
+        # Toolbar (Zeile 1)
+        toolbar = QtWidgets.QHBoxLayout(); toolbar.setSpacing(8)
+        yesterday = (dt.date.today() - dt.timedelta(days=1))
+        yesterday_str = yesterday.strftime("%d.%m.%Y")
+
+        self.start_input = QtWidgets.QLineEdit()
+        self.start_input.setPlaceholderText("TT.MM.JJJJ")
+        self.start_input.setText(yesterday_str)
+        self.start_input.setInputMask("00.00.0000;_")
+        style_line_edit(self.start_input); self.start_input.setToolTip("Startdatum (TT.MM.JJJJ)")
+
+        self.end_input = QtWidgets.QLineEdit()
+        self.end_input.setPlaceholderText("TT.MM.JJJJ")
+        self.end_input.setText(yesterday_str)
+        self.end_input.setInputMask("00.00.0000;_")
+        style_line_edit(self.end_input); self.end_input.setToolTip("Endedatum (TT.MM.JJJJ)")
+
+        # ENTER startet Berechnung
+        self.start_input.returnPressed.connect(self.on_fetch)
+        self.end_input.returnPressed.connect(self.on_fetch)
+
+        self.btn_fetch = QtWidgets.QPushButton("Berechnen"); self.btn_fetch.clicked.connect(self.on_fetch)
+        self.btn_cache = QtWidgets.QPushButton("🧹 Cache leeren"); self.btn_cache.clicked.connect(self.on_clear_cache)
+
+        toolbar.addWidget(QtWidgets.QLabel("Start:")); toolbar.addWidget(self.start_input)
+        toolbar.addSpacing(8)
+        toolbar.addWidget(QtWidgets.QLabel("Ende:")); toolbar.addWidget(self.end_input)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.btn_cache); toolbar.addWidget(self.btn_fetch)
+        vbox.addLayout(toolbar)
+
+        # Toolbar (Zeile 2): rechtsbündiger "Verwendete Stationen" Button (initial versteckt)
+        row2 = QtWidgets.QHBoxLayout()
+        row2.addStretch(1)
+        self.btn_show_stations = QtWidgets.QPushButton("Verwendete Stationen")
+        self.btn_show_stations.clicked.connect(self.show_stations_dialog)
+        self.btn_show_stations.setVisible(False)
+        row2.addWidget(self.btn_show_stations, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        vbox.addLayout(row2)
+
+        # Progress + Live-Status
+        self.progress = QtWidgets.QProgressBar(); self.progress.setTextVisible(True)
+        self.progress.setFormat("⏳ Bereit"); self.progress.setMinimum(0); self.progress.setMaximum(100)
+        vbox.addWidget(self.progress)
+        self.status_label = QtWidgets.QLabel(""); self.status_label.setStyleSheet("color:#6e6e73;")
+        vbox.addWidget(self.status_label)
+
+        # Tabs (nur Ergebnisse-Tab)
+        self.tabs = QtWidgets.QTabWidget(); vbox.addWidget(self.tabs)
+
+        self.tab_results = QtWidgets.QWidget(); self.tabs.addTab(self.tab_results, "📊 Ergebnisse")
+        res_layout = QtWidgets.QVBoxLayout(self.tab_results)
+        res_layout.setContentsMargins(8, 8, 8, 8); res_layout.setSpacing(8)
+
+        res_layout.addWidget(QtWidgets.QLabel("Zeitraum-Zusammenfassung"))
+
+        # Kacheln
+        self.cards_container = QtWidgets.QWidget()
+        self.cards_layout = QtWidgets.QGridLayout(self.cards_container)
+        self.cards_layout.setContentsMargins(0, 0, 0, 0)
+        self.cards_layout.setHorizontalSpacing(12); self.cards_layout.setVerticalSpacing(12)
+        res_layout.addWidget(self.cards_container)
+
+        # Tägliche Mittelwerte – Untertabs pro Region (initial unsichtbar)
+        self.daily_header = QtWidgets.QLabel("Tägliche Mittelwerte je Region")
+        res_layout.addWidget(self.daily_header)
+
+        self.daily_tabs = QtWidgets.QTabWidget()
+        res_layout.addWidget(self.daily_tabs)
+
+        self.daily_views: Dict[str, QtWidgets.QTableView] = {}
+        self.model_daily_by_region: Dict[str, PandasModel] = {}
+        for region in REGION_ORDER:
+            view = QtWidgets.QTableView()
+            view.verticalHeader().setVisible(False)  # führende Positionsziffern aus
+            view.horizontalHeader().setSectionResizeMode(
+                QtWidgets.QHeaderView.ResizeMode.ResizeToContents
+            )
+            model = PandasModel(pd.DataFrame(columns=["Datum", "Temperatur (°C)", "Niederschlag (mm)", "berücksichtigte Stationen"]),
+                                formatters={
+                                    "Datum": lambda x: (pd.to_datetime(x, errors="coerce").strftime("%d.%m.%Y")
+                                                        if pd.notna(x) else ""),
+                                    "Temperatur (°C)": lambda v: f"{float(v):.1f} °C" if pd.notna(v) else "",
+                                    "Niederschlag (mm)": lambda v: f"{float(v):.2f}" if pd.notna(v) else "",
+                                    "berücksichtigte Stationen": lambda v: f"{int(v)}" if pd.notna(v) else "",
+                                })
+            view.setModel(model)
+            self.daily_views[region] = view
+            self.model_daily_by_region[region] = model
+            self.daily_tabs.addTab(view, region)
+
+        # Export Button (initial unsichtbar)
+        export_row = QtWidgets.QHBoxLayout(); export_row.addStretch(1)
+        self.btn_export_daily = QtWidgets.QPushButton("CSV exportieren (tägliche Werte)")
+        self.btn_export_daily.clicked.connect(self.export_daily_csv)
+        export_row.addWidget(self.btn_export_daily); res_layout.addLayout(export_row)
+
+        # Initial: Daily-UI ausblenden
+        self.daily_header.setVisible(False)
+        self.daily_tabs.setVisible(False)
+        self.btn_export_daily.setVisible(False)
+
+        # Datenmodelle (Kacheln/Stationen)
+        self.df_summary = pd.DataFrame()
+        self.df_daily = pd.DataFrame()
+        self.df_stations = pd.DataFrame()
+
+        # ETA-Countdown
+        self.eta_timer = QtCore.QTimer(self); self.eta_timer.setInterval(1000)
+        self.eta_timer.timeout.connect(self._tick_eta)
+        self._eta_active = False; self._eta_start_time = None
+        self._eta_pred_total_seconds = None; self._eta_done_steps = 0; self._eta_total_steps = 0
+
+    # ---------- Aktionen ----------
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.update_stations_button_width()
+
+    def update_stations_button_width(self):
+        try:
+            total = self.btn_cache.sizeHint().width() + self.btn_fetch.sizeHint().width()
+            spacing = 8  # toolbar.setSpacing(8)
+            self.btn_show_stations.setFixedWidth(max(220, total + spacing))
+        except Exception:
+            pass
+
+    def show_stations_dialog(self):
+        if self.df_stations.empty:
+            QtWidgets.QMessageBox.information(self, "Stationen", "Keine Stationenliste vorhanden.")
+            return
+        if self.stations_dialog is None:
+            self.stations_dialog = StationsDialog(self)
+        self.stations_dialog.set_dataframe(
+            self.df_stations.sort_values(["region", "state", "name", "station_id"])
+        )
+        self.stations_dialog.show()
+        self.stations_dialog.raise_()
+        self.stations_dialog.activateWindow()
+
+    def on_clear_cache(self):
+        cache_dir = Path(Settings(cache_disable=False).cache_dir).expanduser()
+        try:
+            if cache_dir.exists():
+                shutil.rmtree(cache_dir, ignore_errors=True)
+            self.status_label.setStyleSheet("color:#2d7d46;")
+            self.status_label.setText(f"🧹 Cache geleert: {cache_dir}")
+        except Exception as e:
+            logging.error("Cache clear failed: %s", e)
+            QtWidgets.QMessageBox.warning(self, "Fehler", f"Cache konnte nicht gelöscht werden:\n{e}")
+
+    def _read_dates(self) -> Tuple[dt.date, dt.date]:
+        s_text = self.start_input.text().strip()
+        e_text = self.end_input.text().strip()
+        s_date = parse_german_date(s_text)
+        e_date = parse_german_date(e_text)
+        if e_date < s_date:
+            raise ValueError("Ende darf nicht vor Start liegen.")
+        return s_date, e_date
+
+    def on_fetch(self):
+        t = getattr(self, "worker_thread", None)
+        if isinstance(t, QtCore.QThread) and t.isRunning():
+            return
+        try:
+            s, e = self._read_dates()
+        except Exception as ex:
+            QtWidgets.QMessageBox.warning(self, "Ungültiges Datum", str(ex))
+            return
+
+        try:
+            # UI reset
+            self.status_label.setStyleSheet("color:#6e6e73;")
+            self.status_label.setText("⏳ Starte Ladevorgang …")
+            self.progress.setVisible(True)
+            self.progress.setValue(0)
+            self.progress.setFormat("⏳ Lade …")
+            self.btn_show_stations.setVisible(False)  # erst nach Berechnung anzeigen
+
+            same_day = (s == e)
+            show_daily = not same_day
+            self.daily_header.setVisible(show_daily)
+            self.daily_tabs.setVisible(show_daily)
+            self.btn_export_daily.setVisible(show_daily)
+
+            # ETA Setup
+            self._eta_start_time = time.perf_counter()
+            self._eta_done_steps = 0
+            self._eta_total_steps = 1 + len(REGIONS)
+            self._eta_pred_total_seconds = None
+            self._eta_active = True
+            self.eta_timer.start()
+
+            # Worker-Thread
+            self.worker_thread = QtCore.QThread(self)
+            self.worker = FetchWorker(s, e)
+            self.worker.moveToThread(self.worker_thread)
+
+            self.worker_thread.started.connect(self.worker.run, QtCore.Qt.ConnectionType.QueuedConnection)
+            self.worker.progress.connect(self.on_progress, QtCore.Qt.ConnectionType.QueuedConnection)
+            self.worker.finished.connect(self.on_finished, QtCore.Qt.ConnectionType.QueuedConnection)
+            self.worker.error.connect(self.on_error, QtCore.Qt.ConnectionType.QueuedConnection)
+
+            self.worker.finished.connect(self.worker_thread.quit)
+            self.worker.finished.connect(self.worker.deleteLater)
+            self.worker_thread.finished.connect(self.worker_thread.deleteLater)
+            self.worker_thread.finished.connect(self.on_thread_finished)
+
+            self.worker_thread.start()
+
+            self.btn_fetch.setEnabled(False)
+            self.btn_cache.setEnabled(False)
+        except BaseException as e:
+            logging.error("on_fetch crashed: %s\n%s", e, traceback.format_exc())
+            QtWidgets.QMessageBox.critical(self, "Fehler", f"Start des Ladevorgangs fehlgeschlagen:\n{e}")
+            self.btn_fetch.setEnabled(True)
+            self.btn_cache.setEnabled(True)
+            self.progress.setVisible(False)
+            self._eta_active = False
+            self.eta_timer.stop()
+
+    def on_thread_finished(self):
+        self.worker_thread = None
+        self.worker = None
+
+    @QtCore.pyqtSlot(int, int, str)
+    def on_progress(self, done: int, total: int, note: str):
+        try:
+            self.status_label.setStyleSheet("color:#6e6e73;")
+            self.status_label.setText(note)
+
+            self._eta_done_steps = done
+            if done >= 1:
+                elapsed = time.perf_counter() - self._eta_start_time
+                avg = elapsed / max(done, 1)
+                self._eta_pred_total_seconds = avg * total
+            pct = int(done / total * 100)
+            eta_text = self._eta_text()
+            self.progress.setValue(min(pct, 100))
+            self.progress.setFormat(f"{eta_text}  •  {note}")
+        except Exception as e:
+            logging.error("on_progress error: %s", e)
+
+    def _eta_text(self) -> str:
+        if not self._eta_active or self._eta_pred_total_seconds is None:
+            return "⏳ Lade …"
+        elapsed = time.perf_counter() - self._eta_start_time
+        remaining = max(int(round(self._eta_pred_total_seconds - elapsed)), 0)
+        return f"⏳ Restzeit ~{remaining}s"
+
+    def _tick_eta(self):
+        if not self._eta_active:
+            return
+        self.progress.setFormat(self._eta_text())
+
+    @QtCore.pyqtSlot(pd.DataFrame, pd.DataFrame, pd.DataFrame)
+    def on_finished(self, summary: pd.DataFrame, daily: pd.DataFrame, stations: pd.DataFrame):
+        self._eta_active = False
+        self.eta_timer.stop()
+        self.progress.setVisible(False)
+
+        self.df_summary = summary.copy()
+        self.df_daily = daily.copy()
+        self.df_stations = stations.copy()
+
+        # Kacheln
+        self.build_summary_cards(self.df_summary)
+
+        # Regionstabellen IMMER vorbereiten (unabhängig von Sichtbarkeit), dann bei Bedarf anzeigen
+        if not self.df_daily.empty:
+            if "temp_mean_C" in self.df_daily.columns:
+                self.df_daily = self.df_daily.rename(columns={"temp_mean_C": "Temperatur (°C)"})
+            for region in REGION_ORDER:
+                sub = self.df_daily[self.df_daily["region"] == region].copy()
+                if sub.empty:
+                    pretty = pd.DataFrame(columns=["Datum", "Temperatur (°C)", "Niederschlag (mm)", "berücksichtigte Stationen"])
+                else:
+                    sub = sub.rename(columns={
+                        "date": "Datum",
+                        "precip_mm": "Niederschlag (mm)",
+                        "stations_used": "berücksichtigte Stationen",
+                    })
+                    sub["Datum"] = pd.to_datetime(sub["Datum"], errors="coerce").dt.tz_localize(None)
+                    pretty = sub[["Datum", "Temperatur (°C)", "Niederschlag (mm)", "berücksichtigte Stationen"]] \
+                        .sort_values("Datum", ascending=False)
+                self.model_daily_by_region[region].setDataFrame(pretty)
+                autosize_columns(self.daily_views[region])
+
+        # Stations-Button nur zeigen, wenn Daten vorhanden
+        has_any_data = (not self.df_summary.empty) or (not self.df_daily.empty) or (not self.df_stations.empty)
+        self.btn_show_stations.setVisible(has_any_data)
+        if has_any_data:
+            QtCore.QTimer.singleShot(0, self.update_stations_button_width)
+
+        # Status
+        if not has_any_data:
+            self.status_label.setStyleSheet("color:#6e6e73;")
+            self.status_label.setText("ℹ️ Keine Daten im Zeitraum gefunden.")
+        else:
+            self.status_label.setStyleSheet("color:#2d7d46;")
+            self.status_label.setText("Fertig.")
+
+        self.btn_fetch.setEnabled(True)
+        self.btn_cache.setEnabled(True)
+
+    def build_summary_cards(self, df: pd.DataFrame):
+        # Kacheln zurücksetzen
+        while self.cards_layout.count():
+            item = self.cards_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.setParent(None)
+
+        if df is None or df.empty:
+            placeholder = QtWidgets.QLabel("Keine Zusammenfassung verfügbar.")
+            placeholder.setStyleSheet("color:#6e6e73;")
+            placeholder.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.cards_layout.addWidget(placeholder, 0, 0, 1, 1)
+            return
+
+        df_sorted = df.copy()
+        df_sorted["__order__"] = df_sorted["Region"].apply(lambda r: REGION_ORDER.index(r) if r in REGION_ORDER else 999)
+        df_sorted = df_sorted.sort_values("__order__")
+
+        col_count = 2
+        for idx, (_, row) in enumerate(df_sorted.iterrows()):
+            region = str(row.get("Region", ""))
+            tmean = pd.to_numeric(row.get("Ø Temperatur (°C)"), errors="coerce")
+            psum  = pd.to_numeric(row.get("Σ Niederschlag (mm)"), errors="coerce")
+            smax  = pd.to_numeric(row.get("max. Stationsanzahl/Tag"), errors="coerce")
+            stot  = pd.to_numeric(row.get("berücksichtigte Stationen (Anzahl)"), errors="coerce")
+            smax_i = int(smax) if pd.notna(smax) else 0
+            stot_i = int(stot) if pd.notna(stot) else 0
+
+            card = RegionCard(
+                region=region,
+                states=REGIONS.get(region, []),
+                temp_mean=(float(tmean) if pd.notna(tmean) else None),
+                precip_sum=(float(psum) if pd.notna(psum) else None),
+                stations_day_max=smax_i,
+                stations_total=stot_i,
+            )
+            r = idx // col_count; c = idx % col_count
+            self.cards_layout.addWidget(card, r, c)
+
+        for c in range(col_count):
+            self.cards_layout.setColumnStretch(c, 1)
+
+    @QtCore.pyqtSlot(str)
+    def on_error(self, msg: str):
+        logging.error("Worker error: %s", msg)
+        self._eta_active = False
+        self.eta_timer.stop()
+        self.progress.setVisible(False)
+        self.btn_fetch.setEnabled(True)
+        self.btn_cache.setEnabled(True)
+        QtWidgets.QMessageBox.critical(self, "Fehler beim Laden", f"{msg}\n\nDetails: {LOG_FILE}")
+
+    # ---------- Export ----------
+    def export_daily_csv(self):
+        rows = []
+        for region in REGION_ORDER:
+            df = self.model_daily_by_region[region].dataframe()
+            if df.empty:
+                continue
+            tmp = df.copy()
+            tmp["Datum"] = pd.to_datetime(tmp["Datum"], errors="coerce").dt.strftime("%d.%m.%Y")
+            tmp.insert(0, "Region", region)
+            rows.append(tmp)
+        if not rows:
+            QtWidgets.QMessageBox.information(self, "Export", "Keine täglichen Werte vorhanden.")
+            return
+        out = pd.concat(rows, ignore_index=True)
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "CSV speichern", "dwd_regions_daily.csv", "CSV (*.csv)"
+        )
+        if path:
+            out.to_csv(path, index=False)
+
+
+# -------------------- main --------------------
+
+def main():
+    lock_fd = acquire_single_instance_lock()
+    if lock_fd is None:
+        return
+
+    install_excepthook()
+
+    app = QtWidgets.QApplication(sys.argv)
+    app.setApplicationName("DWD Regions")
+    w = MainWindow()
+    w.show()
+    code = app.exec()
+
+    try:
+        os.close(lock_fd)
+    except Exception:
+        pass
+    sys.exit(code)
+
+
+if __name__ == "__main__":
+    main()

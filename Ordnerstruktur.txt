@@ -1,0 +1,12 @@
+Wetterdaten/
+├─ app.py                  # Einstiegspunkt (ausführen!)
+├─ main_window.py          # MainWindow (UI-Logik)
+├─ fetch_worker.py         # Hintergrund-Worker (lädt Daten)
+├─ dwd_service.py          # Datenzugriff (wetterdienst), Helper
+├─ pandas_model.py         # QAbstractTableModel für Pandas
+├─ region_card.py          # Kachel-Widget (RegionCard)
+├─ stations_dialog.py      # Popup für "Verwendete Stationen"
+├─ style_utils.py          # Fonts, Styles, Farben, Autosizing
+├─ regions.py              # REGIONS & REGION_ORDER
+├─ single_instance.py      # Single-Instance-Lock
+└─ logging_excepthook.py   # Logging & globaler Exception-Hook

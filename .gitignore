@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.spec
+*.app/
+*.dmg
+*.zip
+*.log
+.cache/
+.DS_Store
+.vscode/
+.idea/
+dmg_src/

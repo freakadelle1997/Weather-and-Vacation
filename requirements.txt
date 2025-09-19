@@ -1,0 +1,7 @@
+PyQt6>=6.6
+pandas>=2.2
+wetterdienst>=0.84
+polars>=0.20
+pyinstaller>=6.6
+certifi>=2023.7.22
+tzdata
