@@ -5,6 +5,13 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from color_config import color_for_temp_hex
 
+# Fixe Puffer für ein einheitliches Layout
+TOP_PAD = 88        # Platz oben: Titel + große Temperatur + Niederschlag
+BOTTOM_PAD = 66     # Platz unten: 2 Stationszeilen + Bevölkerungs-Text
+SIDE_PAD = 16       # Innenabstand links/rechts
+RIGHT_COL_RATIO = 0.38  # max. Breite der BL-Box relativ zur Kartenbreite
+RIGHT_COL_MIN = 150
+RIGHT_COL_MAX = 260
 
 def _fmt_temp(v: Optional[float]) -> str:
     return "" if v is None else f"{v:.1f} °C"
@@ -17,7 +24,14 @@ def _fmt_pct_de(v: Optional[float]) -> str:
 
 
 class RegionCard(QtWidgets.QFrame):
-    """Kachel pro Region mit Gradient, Sparkline, Texten und BL-Liste (Ferien/Feiertag farblich)."""
+    """
+    Layout:
+    - Linke Spalte (im Layout): Titel, Ø Temp (groß), Σ Niederschlag, unten links 2 Stationszeilen
+    - Rechte Elemente (OVERLAY, beeinflussen Layout NICHT):
+        * Oben rechts: Bundesländer (farbig, umbruchsfreundlich)
+        * Unten rechts: Bevölkerungs-Hinweis (bold)
+    - Sparkline: Bereich zwischen TOP_PAD und BOTTOM_PAD über volle Breite
+    """
 
     def __init__(
         self,
@@ -35,8 +49,8 @@ class RegionCard(QtWidgets.QFrame):
     ):
         super().__init__(parent)
         self.setObjectName("RegionCard")
-        self.setMinimumHeight(200)
-        self.setMaximumHeight(240)
+        self.setMinimumHeight(210)
+        self.setMaximumHeight(250)
         self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
 
@@ -59,66 +73,73 @@ class RegionCard(QtWidgets.QFrame):
             QLabel { color: #FFFFFF; }
         """)
 
-        # Layout-Inhalte
+        # ---------- Linke Spalte (im Layout) ----------
         layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(12)
-        layout.setVerticalSpacing(6)
+        layout.setContentsMargins(SIDE_PAD, SIDE_PAD, SIDE_PAD, SIDE_PAD)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(2)
 
-        # Titel links oben
-        title = QtWidgets.QLabel(f"{region}")
-        f = title.font(); f.setPointSize(f.pointSize() + 2); f.setBold(True); title.setFont(f)
+        # Titel
+        title = QtWidgets.QLabel(f"{self.region}")
+        f = title.font(); f.setPointSize(f.pointSize() + 2); f.setBold(True)
+        title.setFont(f)
 
-        # Bundesländer rechts oben (RichText, farbig je Status)
-        bl = QtWidgets.QLabel(self._states_richtext())
-        bl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop)
-        bl.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        # Ø Temperatur (groß)
+        temp_big = QtWidgets.QLabel(_fmt_temp(self.temp_mean))
+        tf = temp_big.font(); tf.setPointSize(tf.pointSize() + 8); tf.setBold(True)
+        temp_big.setFont(tf)
 
-        # Kennzahlen links
-        temp_lbl = QtWidgets.QLabel("Ø Temperatur")
-        temp_val = QtWidgets.QLabel(_fmt_temp(self.temp_mean))
-
+        # Σ Niederschlag (kompakt)
+        prec_row = QtWidgets.QHBoxLayout(); prec_row.setSpacing(6)
         prec_lbl = QtWidgets.QLabel("Σ Niederschlag")
         prec_val = QtWidgets.QLabel(_fmt_precip(self.precip_sum))
+        prec_row.addWidget(prec_lbl); prec_row.addWidget(prec_val); prec_row.addStretch(1)
 
-        st_lbl = QtWidgets.QLabel("max. Stationen/Tag")
-        st_val = QtWidgets.QLabel(str(self.stations_day_max))
+        # Unten links: zwei Zeilen
+        st_row1 = QtWidgets.QHBoxLayout(); st_row1.setSpacing(6)
+        st1_lbl = QtWidgets.QLabel("max. Stationen/Tag")
+        st1_val = QtWidgets.QLabel(str(self.stations_day_max))
+        st_row1.addWidget(st1_lbl); st_row1.addWidget(st1_val); st_row1.addStretch(1)
 
+        st_row2 = QtWidgets.QHBoxLayout(); st_row2.setSpacing(6)
         st2_lbl = QtWidgets.QLabel("berücksichtigte Stationen")
         st2_val = QtWidgets.QLabel(str(self.stations_total))
+        st_row2.addWidget(st2_lbl); st_row2.addWidget(st2_val); st_row2.addStretch(1)
 
-        # Bevölkerung unten rechts
-        pct = QtWidgets.QLabel(f"≈ {_fmt_pct_de(self.population_share_pct)} der Bevölkerung")
-        pf = pct.font(); pf.setBold(True); pct.setFont(pf)
-        pct.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
+        # Linke Spalte in Grid
+        layout.addWidget(title,     0, 0, 1, 1)
+        layout.addWidget(temp_big,  1, 0, 1, 1)
+        layout.addLayout(prec_row,  2, 0, 1, 1)
+        layout.setRowStretch(3, 1)  # drückt die unteren Zeilen nach unten
+        layout.addLayout(st_row1,   4, 0, 1, 1)
+        layout.addLayout(st_row2,   5, 0, 1, 1)
 
-        # Grid:
-        # Zeile 0: Titel (links), Bundesländer (rechts)
-        layout.addWidget(title, 0, 0, 1, 2)
-        layout.addWidget(bl,    0, 2, 2, 1)
+        # ---------- Rechte Elemente als OVERLAY (keine Layout-Teilnahme) ----------
+        self.bl_label = QtWidgets.QLabel(self._states_richtext(), self)
+        self.bl_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop)
+        self.bl_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.bl_label.setWordWrap(True)
+        self.bl_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-        # Zeilen 1..: Kennzahlen links, rechts bleibt BL / unten rechts Population
-        layout.addWidget(temp_lbl, 1, 0); layout.addWidget(temp_val, 1, 1)
-        layout.addWidget(prec_lbl, 2, 0); layout.addWidget(prec_val, 2, 1)
-        layout.addWidget(st_lbl,   3, 0); layout.addWidget(st_val,   3, 1)
-        layout.addWidget(st2_lbl,  4, 0); layout.addWidget(st2_val,  4, 1)
+        self.pct_label = QtWidgets.QLabel(f"≈ {_fmt_pct_de(self.population_share_pct)} der Bevölkerung", self)
+        pf = self.pct_label.font(); pf.setBold(True); self.pct_label.setFont(pf)
+        self.pct_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
+        self.pct_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-        layout.addWidget(pct, 4, 2, 1, 1)
-
+    # ---------- BL-Farben ----------
     def _states_richtext(self) -> str:
-        # Ferien > Feiertag > neutral
         lines = []
         for s in self.states:
             if s in self.vacation_states:
-                color = "#FF3B30"  # Rot
+                color = "#FF3B30"  # Ferien → Rot
             elif s in self.holiday_states:
-                color = "#FF9F0A"  # Orange
+                color = "#FF9F0A"  # Feiertag → Orange
             else:
-                color = "#D1D1D1"  # Hellgrau
-            lines.append(f'<span style="color:{color}">{QtGui.QGuiApplication.translate("", s)}</span>')
+                color = "#D1D1D1"  # neutral
+            lines.append(f'<span style="color:{color}">{s}</span>')
         return "<br/>".join(lines)
 
-    # ---- Zeichenlogik ----
+    # ---------- Painting (Hintergrund + Sparkline) ----------
     def paintEvent(self, e: QtGui.QPaintEvent):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
@@ -126,37 +147,41 @@ class RegionCard(QtWidgets.QFrame):
         r = self.rect().adjusted(1, 1, -1, -1)
         radius = 14
 
-        # Farben aus Temperatur ableiten
+        # Kartenfarbe aus Temperatur
         base_hex = color_for_temp_hex(self.temp_mean)
         base = QtGui.QColor(base_hex)
 
-        # Unterkante (volle Sättigung), nach oben heller Verlauf
+        # Heller Verlauf nach oben
         top = QtGui.QColor(base); top.setAlpha(220)
         bottom = QtGui.QColor(base); bottom.setAlpha(255)
-
         grad_bg = QtGui.QLinearGradient(r.left(), r.top(), r.left(), r.bottom())
         grad_bg.setColorAt(0.0, top.lighter(120))
         grad_bg.setColorAt(1.0, bottom)
 
-        brush_bg = QtGui.QBrush(grad_bg)
         path = QtGui.QPainterPath()
         path.addRoundedRect(QtCore.QRectF(r), radius, radius)
-        p.fillPath(path, brush_bg)
+        p.fillPath(path, QtGui.QBrush(grad_bg))
 
-        # Sparkline Fläche und Linie – volle Breite
+        # Sparkline strikt zwischen TOP_PAD und BOTTOM_PAD (volle Breite)
         if self.spark_values:
-            spark_rect = QtCore.QRectF(r.left() + 8, r.top() + 64, r.width() - 16, r.height() - 92)
+            spark_rect = QtCore.QRectF(
+                r.left() + SIDE_PAD - 8,                  # etwas nach links, optisch voll
+                r.top() + TOP_PAD,
+                r.width() - 2 * (SIDE_PAD - 8),
+                r.height() - TOP_PAD - BOTTOM_PAD
+            )
 
             vals = self.spark_values[:]
             vmin = min(vals); vmax = max(vals)
             if abs(vmax - vmin) < 1e-9:
-                vmax = vmin + 1.0  # degeneriert → flache Linie
+                vmax = vmin + 1.0
 
-            # Umgekehrter Verlauf: oben dunkler → unten heller
+            # Fläche: oben dunkler → unten heller
             fill_top = QtGui.QColor(base.darker(130)); fill_top.setAlpha(120)
             fill_bottom = QtGui.QColor(base.lighter(130)); fill_bottom.setAlpha(80)
-
-            grad_fill = QtGui.QLinearGradient(spark_rect.left(), spark_rect.top(), spark_rect.left(), spark_rect.bottom())
+            grad_fill = QtGui.QLinearGradient(
+                spark_rect.left(), spark_rect.top(), spark_rect.left(), spark_rect.bottom()
+            )
             grad_fill.setColorAt(0.0, fill_top)
             grad_fill.setColorAt(1.0, fill_bottom)
 
@@ -174,33 +199,41 @@ class RegionCard(QtWidgets.QFrame):
             # Fläche
             poly = QtGui.QPolygonF()
             if n == 1:
-                poly.append(QtCore.QPointF(xs[0], ys[0]))
-                poly.append(QtCore.QPointF(xs[1], ys[1]))
-                poly.append(QtCore.QPointF(xs[1], spark_rect.bottom()))
-                poly.append(QtCore.QPointF(xs[0], spark_rect.bottom()))
+                poly.append(QtCore.QPointF(xs[0], ys[0])); poly.append(QtCore.QPointF(xs[1], ys[1]))
+                poly.append(QtCore.QPointF(xs[1], spark_rect.bottom())); poly.append(QtCore.QPointF(xs[0], spark_rect.bottom()))
             else:
-                for x, y in zip(xs, ys):
-                    poly.append(QtCore.QPointF(x, y))
+                for x, y in zip(xs, ys): poly.append(QtCore.QPointF(x, y))
                 poly.append(QtCore.QPointF(spark_rect.right(), spark_rect.bottom()))
                 poly.append(QtCore.QPointF(spark_rect.left(), spark_rect.bottom()))
-            p.setPen(QtCore.Qt.PenStyle.NoPen)
-            p.setBrush(QtGui.QBrush(grad_fill))
-            p.drawPolygon(poly)
+            p.setPen(QtCore.Qt.PenStyle.NoPen); p.setBrush(QtGui.QBrush(grad_fill)); p.drawPolygon(poly)
 
             # Linie
-            pen = QtGui.QPen(line_color, 2)
-            p.setPen(pen)
+            pen = QtGui.QPen(line_color, 2); p.setPen(pen)
             if n == 1:
                 p.drawLine(int(xs[0]), int(ys[0]), int(xs[1]), int(ys[1]))
             else:
                 path_line = QtGui.QPainterPath(QtCore.QPointF(xs[0], ys[0]))
-                for i in range(1, n):
-                    path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
+                for i in range(1, n): path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
                 p.drawPath(path_line)
 
-        # dünne innere Kontur
+        # dünne Kontur
         pen_border = QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 1)
-        p.setPen(pen_border)
-        p.drawRoundedRect(r, radius, radius)
+        p.setPen(pen_border); p.drawRoundedRect(r, radius, radius)
 
         super().paintEvent(e)
+
+    # ---------- Overlays positionieren (entkoppelt vom Layout) ----------
+    def resizeEvent(self, e: QtGui.QResizeEvent):
+        r = self.rect().adjusted(SIDE_PAD, SIDE_PAD, -SIDE_PAD, -SIDE_PAD)
+
+        # Breite für BL-Box
+        w = int(min(RIGHT_COL_MAX, max(RIGHT_COL_MIN, r.width() * RIGHT_COL_RATIO)))
+        self.bl_label.setFixedWidth(w)
+        h = self.bl_label.sizeHint().height()
+        self.bl_label.setGeometry(r.right() - w, r.top(), w, h)
+
+        # Bevölkerung unten rechts
+        s = self.pct_label.sizeHint()
+        self.pct_label.setGeometry(r.right() - s.width(), r.bottom() - s.height(), s.width(), s.height())
+
+        super().resizeEvent(e)
