@@ -5,13 +5,10 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from color_config import color_for_temp_hex
 
-# Fixe Puffer für ein einheitliches Layout
+# Fixe Puffer (einheitliches Layout)
 TOP_PAD = 88        # Platz oben: Titel + große Temperatur + Niederschlag
-BOTTOM_PAD = 66     # Platz unten: 2 Stationszeilen + Bevölkerungs-Text
+BOTTOM_PAD = 66     # unten: 2 Stationszeilen + Bevölkerungs-Text
 SIDE_PAD = 16       # Innenabstand links/rechts
-RIGHT_COL_RATIO = 0.38  # max. Breite der BL-Box relativ zur Kartenbreite
-RIGHT_COL_MIN = 150
-RIGHT_COL_MAX = 260
 
 def _fmt_temp(v: Optional[float]) -> str:
     return "" if v is None else f"{v:.1f} °C"
@@ -25,14 +22,10 @@ def _fmt_pct_de(v: Optional[float]) -> str:
 
 class RegionCard(QtWidgets.QFrame):
     """
-    Layout:
-    - Linke Spalte (im Layout): Titel, Ø Temp (groß), Σ Niederschlag, unten links 2 Stationszeilen
-    - Rechte Elemente (OVERLAY, beeinflussen Layout NICHT):
-        * Oben rechts: Bundesländer (farbig, umbruchsfreundlich)
-        * Unten rechts: Bevölkerungs-Hinweis (bold)
-    - Sparkline: Bereich zwischen TOP_PAD und BOTTOM_PAD über volle Breite
+    Linke Spalte: Titel, Ø Temp (groß), Σ Niederschlag, unten links 2 Stationszeilen
+    Rechte Seite: BL-Liste (oben rechts, Overlay), Bevölkerungs-Hinweis (unten rechts, Overlay)
+    Sparkline: zwischen TOP_PAD und BOTTOM_PAD über die volle Breite
     """
-
     def __init__(
         self,
         region: str,
@@ -51,7 +44,6 @@ class RegionCard(QtWidgets.QFrame):
         self.setObjectName("RegionCard")
         self.setMinimumHeight(210)
         self.setMaximumHeight(250)
-        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
 
         self.region = region
@@ -73,29 +65,25 @@ class RegionCard(QtWidgets.QFrame):
             QLabel { color: #FFFFFF; }
         """)
 
-        # ---------- Linke Spalte (im Layout) ----------
+        # Linke Spalte (im Layout)
         layout = QtWidgets.QGridLayout(self)
         layout.setContentsMargins(SIDE_PAD, SIDE_PAD, SIDE_PAD, SIDE_PAD)
         layout.setHorizontalSpacing(10)
         layout.setVerticalSpacing(2)
 
-        # Titel
-        title = QtWidgets.QLabel(f"{self.region}")
+        title = QtWidgets.QLabel(self.region)
         f = title.font(); f.setPointSize(f.pointSize() + 2); f.setBold(True)
         title.setFont(f)
 
-        # Ø Temperatur (groß)
         temp_big = QtWidgets.QLabel(_fmt_temp(self.temp_mean))
         tf = temp_big.font(); tf.setPointSize(tf.pointSize() + 8); tf.setBold(True)
         temp_big.setFont(tf)
 
-        # Σ Niederschlag (kompakt)
         prec_row = QtWidgets.QHBoxLayout(); prec_row.setSpacing(6)
         prec_lbl = QtWidgets.QLabel("Σ Niederschlag")
         prec_val = QtWidgets.QLabel(_fmt_precip(self.precip_sum))
         prec_row.addWidget(prec_lbl); prec_row.addWidget(prec_val); prec_row.addStretch(1)
 
-        # Unten links: zwei Zeilen
         st_row1 = QtWidgets.QHBoxLayout(); st_row1.setSpacing(6)
         st1_lbl = QtWidgets.QLabel("max. Stationen/Tag")
         st1_val = QtWidgets.QLabel(str(self.stations_day_max))
@@ -106,15 +94,14 @@ class RegionCard(QtWidgets.QFrame):
         st2_val = QtWidgets.QLabel(str(self.stations_total))
         st_row2.addWidget(st2_lbl); st_row2.addWidget(st2_val); st_row2.addStretch(1)
 
-        # Linke Spalte in Grid
         layout.addWidget(title,     0, 0, 1, 1)
         layout.addWidget(temp_big,  1, 0, 1, 1)
         layout.addLayout(prec_row,  2, 0, 1, 1)
-        layout.setRowStretch(3, 1)  # drückt die unteren Zeilen nach unten
+        layout.setRowStretch(3, 1)
         layout.addLayout(st_row1,   4, 0, 1, 1)
         layout.addLayout(st_row2,   5, 0, 1, 1)
 
-        # ---------- Rechte Elemente als OVERLAY (keine Layout-Teilnahme) ----------
+        # Rechte Seite (Overlay-Labels, beeinflussen Layout nicht)
         self.bl_label = QtWidgets.QLabel(self._states_richtext(), self)
         self.bl_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop)
         self.bl_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
@@ -126,7 +113,6 @@ class RegionCard(QtWidgets.QFrame):
         self.pct_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
         self.pct_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
-    # ---------- BL-Farben ----------
     def _states_richtext(self) -> str:
         lines = []
         for s in self.states:
@@ -139,7 +125,7 @@ class RegionCard(QtWidgets.QFrame):
             lines.append(f'<span style="color:{color}">{s}</span>')
         return "<br/>".join(lines)
 
-    # ---------- Painting (Hintergrund + Sparkline) ----------
+    # Hintergrund + Sparkline
     def paintEvent(self, e: QtGui.QPaintEvent):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
@@ -147,11 +133,9 @@ class RegionCard(QtWidgets.QFrame):
         r = self.rect().adjusted(1, 1, -1, -1)
         radius = 14
 
-        # Kartenfarbe aus Temperatur
         base_hex = color_for_temp_hex(self.temp_mean)
         base = QtGui.QColor(base_hex)
 
-        # Heller Verlauf nach oben
         top = QtGui.QColor(base); top.setAlpha(220)
         bottom = QtGui.QColor(base); bottom.setAlpha(255)
         grad_bg = QtGui.QLinearGradient(r.left(), r.top(), r.left(), r.bottom())
@@ -162,21 +146,19 @@ class RegionCard(QtWidgets.QFrame):
         path.addRoundedRect(QtCore.QRectF(r), radius, radius)
         p.fillPath(path, QtGui.QBrush(grad_bg))
 
-        # Sparkline strikt zwischen TOP_PAD und BOTTOM_PAD (volle Breite)
+        # Sparkline
         if self.spark_values:
             spark_rect = QtCore.QRectF(
-                r.left() + SIDE_PAD - 8,                  # etwas nach links, optisch voll
+                r.left() + SIDE_PAD - 8,
                 r.top() + TOP_PAD,
                 r.width() - 2 * (SIDE_PAD - 8),
                 r.height() - TOP_PAD - BOTTOM_PAD
             )
-
             vals = self.spark_values[:]
             vmin = min(vals); vmax = max(vals)
             if abs(vmax - vmin) < 1e-9:
                 vmax = vmin + 1.0
 
-            # Fläche: oben dunkler → unten heller
             fill_top = QtGui.QColor(base.darker(130)); fill_top.setAlpha(120)
             fill_bottom = QtGui.QColor(base.lighter(130)); fill_bottom.setAlpha(80)
             grad_fill = QtGui.QLinearGradient(
@@ -196,7 +178,6 @@ class RegionCard(QtWidgets.QFrame):
                 xs = [spark_rect.left() + i * (spark_rect.width() / (n - 1)) for i in range(n)]
                 ys = [spark_rect.bottom() - (v - vmin) / (vmax - vmin) * spark_rect.height() for v in vals]
 
-            # Fläche
             poly = QtGui.QPolygonF()
             if n == 1:
                 poly.append(QtCore.QPointF(xs[0], ys[0])); poly.append(QtCore.QPointF(xs[1], ys[1]))
@@ -207,7 +188,6 @@ class RegionCard(QtWidgets.QFrame):
                 poly.append(QtCore.QPointF(spark_rect.left(), spark_rect.bottom()))
             p.setPen(QtCore.Qt.PenStyle.NoPen); p.setBrush(QtGui.QBrush(grad_fill)); p.drawPolygon(poly)
 
-            # Linie
             pen = QtGui.QPen(line_color, 2); p.setPen(pen)
             if n == 1:
                 p.drawLine(int(xs[0]), int(ys[0]), int(xs[1]), int(ys[1]))
@@ -216,23 +196,20 @@ class RegionCard(QtWidgets.QFrame):
                 for i in range(1, n): path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
                 p.drawPath(path_line)
 
-        # dünne Kontur
         pen_border = QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 1)
         p.setPen(pen_border); p.drawRoundedRect(r, radius, radius)
-
         super().paintEvent(e)
 
-    # ---------- Overlays positionieren (entkoppelt vom Layout) ----------
+    # Overlays platzieren (entkoppelt vom Layout)
     def resizeEvent(self, e: QtGui.QResizeEvent):
         r = self.rect().adjusted(SIDE_PAD, SIDE_PAD, -SIDE_PAD, -SIDE_PAD)
 
-        # Breite für BL-Box
-        w = int(min(RIGHT_COL_MAX, max(RIGHT_COL_MIN, r.width() * RIGHT_COL_RATIO)))
+        # BL-Box oben rechts – max. 40% Breite, 2 Zeilen Höhe genügt (WordWrap)
+        w = max(160, int(r.width() * 0.38))
         self.bl_label.setFixedWidth(w)
         h = self.bl_label.sizeHint().height()
         self.bl_label.setGeometry(r.right() - w, r.top(), w, h)
 
-        # Bevölkerung unten rechts
         s = self.pct_label.sizeHint()
         self.pct_label.setGeometry(r.right() - s.width(), r.bottom() - s.height(), s.width(), s.height())
 

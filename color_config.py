@@ -1,82 +1,92 @@
 # color_config.py
 from __future__ import annotations
-from pathlib import Path
 import json
-import re
-from typing import Dict, List, Tuple, Optional
+from pathlib import Path
+from typing import List, Dict, Any, Optional
 
-APP_DIR = Path.home() / "Library" / "Application Support" / "Wetterdaten"
-APP_DIR.mkdir(parents=True, exist_ok=True)
-CONFIG_PATH = APP_DIR / "settings.json"
+# 7 Temperaturbereiche:
+# -20..10.9 | 11..14.9 | 15..19.9 | 20..24.9 | 25..29.9 | 30..34.9 | 35..49.9
+# Neue Standardfarben (wie gewünscht):
+# –20.0 bis 10.9 °C  -> #1E3A8A (dunkelblau)
+# 11.0 bis 14.9 °C   -> #2563EB (kräftiges Blau)
+# 15.0 bis 19.9 °C   -> #3B82F6 (helleres Blau)
+# 20.0 bis 24.9 °C   -> #22C55E (grünlich – neutral)
+# 25.0 bis 29.9 °C   -> #FACC15 (warm gelb)
+# 30.0 bis 34.9 °C   -> #F97316 (orange)
+# 35.0 bis 49.9 °C   -> #DC2626 (kräftig rot)
 
-# Temperaturbereiche (fixe Grenzen & Keys in Reihenfolge)
-RANGES: List[Tuple[float, float, str, str]] = [
-    (-20.0, 10.9, "range1", "-20 bis 10,9 °C"),
-    (11.0, 14.9, "range2", "11 bis 14,9 °C"),
-    (15.0, 19.9, "range3", "15 bis 19,9 °C"),
-    (20.0, 24.9, "range4", "20 bis 24,9 °C"),
-    (25.0, 29.9, "range5", "25 bis 29,9 °C"),
-    (30.0, 34.9, "range6", "30 bis 34,9 °C"),
-    (35.0, 49.9, "range7", "35 bis 49,9 °C"),
+_DEFAULTS: List[Dict[str, Any]] = [
+    {"min": -20.0, "max": 10.9, "color": "#1E3A8A"},
+    {"min": 11.0,  "max": 14.9, "color": "#2563EB"},
+    {"min": 15.0,  "max": 19.9, "color": "#3B82F6"},
+    {"min": 20.0,  "max": 24.9, "color": "#22C55E"},
+    {"min": 25.0,  "max": 29.9, "color": "#FACC15"},
+    {"min": 30.0,  "max": 34.9, "color": "#F97316"},
+    {"min": 35.0,  "max": 49.9, "color": "#DC2626"},
 ]
 
-# Defaults (wie zuletzt gewünscht – Splitting der 11–19,9-Spanne)
-DEFAULT_COLORS: Dict[str, str] = {
-    "range1": "#3840FF",  # -20..10.9
-    "range2": "#38ACFF",  # 11..14.9 (kühlblau)
-    "range3": "#38ACFF",  # 15..19.9 (erstmal identisch – kann im Dialog geändert werden)
-    "range4": "#35EE14",  # 20..24.9
-    "range5": "#C6EE14",  # 25..29.9
-    "range6": "#EE9F14",  # 30..34.9
-    "range7": "#EE1414",  # 35..49.9
-}
+def _config_dir() -> Path:
+    # macOS: ~/Library/Application Support/Wetterdaten
+    base = Path.home() / "Library" / "Application Support" / "Wetterdaten"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
-HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+def _config_path() -> Path:
+    return _config_dir() / "colors.json"
 
+def default_config() -> List[Dict[str, Any]]:
+    return [dict(e) for e in _DEFAULTS]
 
-def _clean_hex(s: str) -> str:
-    s = (s or "").strip()
-    if HEX_RE.match(s):
-        return s.upper()
-    raise ValueError(f"Ungültige HEX-Farbe: {s}")
+def _is_hex_color(s: str) -> bool:
+    if not isinstance(s, str) or len(s) != 7 or not s.startswith("#"):
+        return False
+    try:
+        int(s[1:], 16)
+        return True
+    except Exception:
+        return False
 
+def load_config() -> List[Dict[str, Any]]:
+    p = _config_path()
+    if not p.exists():
+        return default_config()
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        out: List[Dict[str, Any]] = []
+        for e in data:
+            try:
+                mn = float(e["min"]); mx = float(e["max"]); col = str(e["color"]).upper()
+                if mn <= mx and _is_hex_color(col):
+                    out.append({"min": mn, "max": mx, "color": col})
+            except Exception:
+                pass
+        if len(out) != 7:
+            return default_config()
+        return out
+    except Exception:
+        return default_config()
 
-def load_config() -> Dict[str, str]:
-    data = {}
-    if CONFIG_PATH.exists():
-        try:
-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-    # Mergen mit Defaults (fehlende Keys auffüllen)
-    out = {**DEFAULT_COLORS, **{k: v for k, v in (data or {}).items() if HEX_RE.match(str(v))}}
-    # Uppercase normieren
-    out = {k: v.upper() for k, v in out.items()}
-    return out
+def save_config(items: List[Dict[str, Any]]) -> None:
+    # erwartet genau 7 Items mit min/max/color (#RRGGBB)
+    if len(items) != 7:
+        raise ValueError("Es müssen genau 7 Farbbereiche konfiguriert werden.")
+    for e in items:
+        if not {"min","max","color"} <= set(e):
+            raise ValueError("Ungültiger Eintrag in colors.json")
+        if not _is_hex_color(e["color"]):
+            raise ValueError(f"Ungültige Hex-Farbe: {e['color']}")
+        float(e["min"]); float(e["max"])
+    p = _config_path()
+    p.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
 
-
-def save_config(colors: Dict[str, str]) -> None:
-    clean = {}
-    for key, val in colors.items():
-        if key in {r[2] for r in RANGES}:
-            clean[key] = _clean_hex(val)
-    CONFIG_PATH.write_text(json.dumps(clean, indent=2), encoding="utf-8")
-
-
-def get_ranges_meta() -> List[Tuple[str, str, float, float]]:
-    """Return [(label, key, lo, hi), ...] in UI-Reihenfolge."""
-    return [(label, key, lo, hi) for (lo, hi, key, label) in RANGES]
-
-
-def color_for_temp_hex(temp_c: Optional[float], cfg: Optional[Dict[str, str]] = None) -> str:
-    cfg = cfg or load_config()
-    if temp_c is None:
-        # neutrale, leicht kühle Farbe
-        return cfg["range2"]
-    for (lo, hi, key, _label) in RANGES:
-        if lo <= temp_c <= hi:
-            return cfg.get(key, DEFAULT_COLORS[key])
-    # clamp außerhalb
-    if temp_c < RANGES[0][0]:
-        return cfg.get(RANGES[0][2], DEFAULT_COLORS[RANGES[0][2]])
-    return cfg.get(RANGES[-1][2], DEFAULT_COLORS[RANGES[-1][2]])
+def color_for_temp_hex(temp: Optional[float]) -> str:
+    cfg = load_config()
+    if temp is None:
+        # neutrale Karte, wenn kein Wert: dezentes Grau-Blau
+        return "#6B7A90"
+    for e in cfg:
+        if e["min"] <= temp <= e["max"]:
+            return str(e["color"]).upper()
+    if temp < cfg[0]["min"]:
+        return str(cfg[0]["color"]).upper()
+    return str(cfg[-1]["color"]).upper()
