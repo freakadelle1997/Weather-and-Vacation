@@ -56,7 +56,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._states_free_union: Set[str] = set()
         self._free_share_pct: float = 0.0
 
-        # Farbkonfiguration laden (Einstellungen)
+        # Datencontainer
+        self.df_summary = pd.DataFrame()
+        self.df_daily = pd.DataFrame()
+        self.df_stations = pd.DataFrame()
+        self.df_spark = pd.DataFrame()   # NEU: 30-Tage-Temps je Region
+
+        # Farbkonfiguration
         self._colors = load_config()
 
         # Stile
@@ -180,7 +186,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model_daily_by_region: Dict[str, PandasModel] = {}
         for region in REGION_ORDER:
             view = QtWidgets.QTableView()
-            view.verticalHeader().setVisible(False)  # keine Reihen-Nummern
+            view.verticalHeader().setVisible(False)
             view.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
             model = PandasModel(
                 pd.DataFrame(columns=["Datum", "Temperatur (°C)", "Niederschlag (mm)", "berücksichtigte Stationen"]),
@@ -210,11 +216,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.daily_tabs.setVisible(False)
         self.btn_export_daily.setVisible(False)
 
-        # Datencontainer
-        self.df_summary = pd.DataFrame()
-        self.df_daily = pd.DataFrame()
-        self.df_stations = pd.DataFrame()
-
         # ETA-Countdown
         self.eta_timer = QtCore.QTimer(self)
         self.eta_timer.setInterval(1000)
@@ -232,10 +233,9 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg.exec()
 
     def _on_settings_changed(self):
-        # Farben neu laden und Karten re-rendern
         self._colors = load_config()
-        if not self.df_summary.empty:
-            self.build_summary_cards(self.df_summary, self._build_spark_map_from_daily())
+        # Re-Render der Karten mit neuen Farben
+        self.build_summary_cards(self.df_summary, self._build_spark_map_from_df(self.df_spark))
 
     # ================= Utils =================
     def _read_dates(self) -> Tuple[dt.date, dt.date]:
@@ -246,8 +246,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return s, e
 
     def _update_free_share(self, s: dt.date, e: dt.date):
-        # Ferien haben Vorrang vor Feiertagen bei Anzeige pro BL.
-        vac, hol = union_affected_states(s, e)  # Sets von Bundesländer-Langnamen
+        vac, hol = union_affected_states(s, e)
         self._states_with_vacation = vac
         self._states_with_holiday = hol
         uni = vac.union(hol)
@@ -255,7 +254,6 @@ class MainWindow(QtWidgets.QMainWindow):
         pop = sum(BUNDESLAND_POP.get(bl, 0) for bl in uni)
         self._free_share_pct = (pop / TOTAL_POP * 100.0) if TOTAL_POP > 0 else 0.0
 
-        # Direkt sichtbarer Status
         self.free_share_label.setText(
             f"Freie Tage/Ferien beeinflussen ≈ {self._free_share_pct:.1f} % der Bevölkerung"
         )
@@ -276,49 +274,25 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.progress.setFormat(self._eta_text())
 
-    def _build_spark_map_from_daily(self) -> Dict[str, List[float]]:
-        """
-        Liefert je Region eine Liste von Temperaturwerten der letzten 30 Tage (vom Enddatum rückwärts).
-        Erkennt sowohl 'temp_mean_C' (roh) als auch 'Temperatur (°C)' (umbenannt).
-        Reihenfolge: chronologisch.
-        """
-        out: Dict[str, List[float]] = {}
-        if self.df_daily.empty or self.last_end_date is None:
-            return {r: [] for r in REGION_ORDER}
+    def _build_spark_map_from_df(self, spark_df: pd.DataFrame) -> Dict[str, List[float]]:
+        """Extrahiert je Region eine Liste von bis zu 30 Temperaturwerten (chronologisch)."""
+        out: Dict[str, List[float]] = {r: [] for r in REGION_ORDER}
+        if spark_df is None or spark_df.empty:
+            return out
 
-        end_dt = pd.Timestamp(dt.datetime.combine(self.last_end_date, dt.time.min))
-        start_dt = end_dt - pd.Timedelta(days=29)
-
-        df = self.df_daily.copy()
-        # Datumsspalte vereinheitlichen
+        df = spark_df.copy()
         if "date" in df.columns:
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
-            date_col = "date"
-        elif "Datum" in df.columns:
-            df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
-            date_col = "Datum"
-        else:
-            return {r: [] for r in REGION_ORDER}
-
-        # Temperaturspalte erkennen (vor/nach Rename)
-        if "temp_mean_C" in df.columns:
-            temp_col = "temp_mean_C"
-        elif "Temperatur (°C)" in df.columns:
-            temp_col = "Temperatur (°C)"
-        else:
-            return {r: [] for r in REGION_ORDER}
+        if "temp_mean_C" not in df.columns:
+            return out
 
         for region in REGION_ORDER:
             sub = df[df["region"] == region].copy()
             if sub.empty:
-                out[region] = []
                 continue
-            sub = sub[(sub[date_col] >= start_dt) & (sub[date_col] <= end_dt)].sort_values(date_col)
-            if sub.empty or temp_col not in sub.columns:
-                out[region] = []
-                continue
-            vals = pd.to_numeric(sub[temp_col], errors="coerce").dropna().astype(float).tolist()
-            out[region] = vals
+            sub = sub.sort_values("date")
+            vals = pd.to_numeric(sub["temp_mean_C"], errors="coerce").dropna().astype(float).tolist()
+            out[region] = vals[-30:]
         return out
 
     # ================= Aktionen =================
@@ -365,17 +339,17 @@ class MainWindow(QtWidgets.QMainWindow):
         # ETA Setup
         self._eta_start_time = time.perf_counter()
         self._eta_done_steps = 0
-        self._eta_total_steps = 1 + len(REGIONS)
+        self._eta_total_steps = 1 + len(REGIONS) * 2 + 1  # grob: Stationen & pro Region (Main+Spark)
         self._eta_pred_total_seconds = None
         self._eta_active = True
         self.eta_timer.start()
 
-        # Ferien/Feiertage vorberechnen (rechter Text & BL-Farben in den Karten)
+        # Ferien/Feiertage vorberechnen
         self._update_free_share(s, e)
 
         # Worker
         self.worker_thread = QtCore.QThread(self)
-        self.worker = FetchWorker(s, e)
+        self.worker = FetchWorker(s, e, REGIONS)
         self.worker.moveToThread(self.worker_thread)
 
         self.worker_thread.started.connect(self.worker.run, QtCore.Qt.ConnectionType.QueuedConnection)
@@ -392,7 +366,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.btn_fetch.setEnabled(False)
         self.btn_cache.setEnabled(False)
-        self.btn_show_stations.setVisible(False)  # erst wieder zeigen, wenn neue Daten da sind
+        self.btn_show_stations.setVisible(False)
 
     def on_thread_finished(self):
         self.worker_thread = None
@@ -407,13 +381,13 @@ class MainWindow(QtWidgets.QMainWindow):
             avg = elapsed / max(done, 1)
             self._eta_pred_total_seconds = avg * total
 
-        pct = int(done / total * 100)
-        self.progress.setValue(min(pct, 100))
+        pct = int(min(max(done / max(total, 1) * 100, 0), 100))
+        self.progress.setValue(pct)
         self.progress.setFormat(f"{self._eta_text()}  •  {note}")
         self.status_label.setText(note)
 
-    @QtCore.pyqtSlot(pd.DataFrame, pd.DataFrame, pd.DataFrame)
-    def on_finished(self, summary: pd.DataFrame, daily: pd.DataFrame, stations: pd.DataFrame):
+    @QtCore.pyqtSlot(pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame)
+    def on_finished(self, summary: pd.DataFrame, daily: pd.DataFrame, stations: pd.DataFrame, spark: pd.DataFrame):
         self._eta_active = False
         self.eta_timer.stop()
         self.progress.setVisible(False)
@@ -421,6 +395,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.df_summary = summary.copy()
         self.df_daily = daily.copy()
         self.df_stations = stations.copy()
+        self.df_spark = spark.copy()
 
         # Daily: Anzeige-Spaltennamen (Temp/Niederschlag/Stationen umbenennen)
         if not self.df_daily.empty:
@@ -431,8 +406,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if "stations_used" in self.df_daily.columns:
                 self.df_daily = self.df_daily.rename(columns={"stations_used": "berücksichtigte Stationen"})
 
-        # Karten bauen (inkl. Sparkline-Daten aus last 30 Tage vom Enddatum)
-        spark_map = self._build_spark_map_from_daily()
+        # Karten bauen (Sparkline aus df_spark)
+        spark_map = self._build_spark_map_from_df(self.df_spark)
         self.build_summary_cards(self.df_summary, spark_map)
 
         # Tägliche Tabellen je Region aktualisieren
@@ -471,7 +446,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if df_summary.empty:
             return
 
-        # Reihenfolge & 2x2 Grid
         order = REGION_ORDER
         positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
         for idx, region in enumerate(order):
@@ -479,14 +453,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
             sub = df_summary[df_summary["Region"] == region]
             if sub.empty:
-                ghost = QtWidgets.QFrame()
-                self.cards_layout.addWidget(ghost, row, col)
+                self.cards_layout.addWidget(QtWidgets.QFrame(), row, col)
                 continue
 
             temp_mean = float(sub["Ø Temperatur (°C)"].iloc[0]) if "Ø Temperatur (°C)" in sub.columns and pd.notna(sub["Ø Temperatur (°C)"].iloc[0]) else None
             precip_sum = float(sub["Σ Niederschlag (mm)"].iloc[0]) if "Σ Niederschlag (mm)" in sub.columns and pd.notna(sub["Σ Niederschlag (mm)"].iloc[0]) else None
 
-            # Robust und ohne Tippfehler: 'max. Stationsanzahl/Tag'
             stations_day_max = 0
             if "max. Stationsanzahl/Tag" in sub.columns:
                 v = pd.to_numeric(sub["max. Stationsanzahl/Tag"].iloc[0], errors="coerce")
@@ -495,9 +467,8 @@ class MainWindow(QtWidgets.QMainWindow):
             stations_total = int(sub["berücksichtigte Stationen (Anzahl)"].iloc[0]) if "berücksichtigte Stationen (Anzahl)" in sub.columns and pd.notna(sub["berücksichtigte Stationen (Anzahl)"].iloc[0]) else 0
 
             states = REGIONS[region]
-            pop_share = region_population_share(region)  # Prozent der Gesamtbevölkerung
+            pop_share = region_population_share(region)
 
-            # Ferien haben Vorrang vor Feiertag; Übergabe als Sets
             vac_states = set(s for s in states if s in self._states_with_vacation)
             hol_states = set(s for s in states if (s in self._states_with_holiday and s not in vac_states))
 
@@ -518,9 +489,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cards_layout.addWidget(card, row, col)
 
     def update_daily_tabs(self, df_daily: pd.DataFrame):
-        """Befüllt je Region die tägliche Tabelle: Datum (TT.MM.JJJJ), Temp (°C 1NK), Niederschlag (mm 2NK), berücksichtigte Stationen.
-           Anzeige absteigend nach Datum, Kopfzeilen automatisch passend."""
-        # Standard leeren
         for region in REGION_ORDER:
             model = self.model_daily_by_region[region]
             model.setDataFrame(pd.DataFrame(columns=["Datum", "Temperatur (°C)", "Niederschlag (mm)", "berücksichtigte Stationen"]))
@@ -531,7 +499,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         df = df_daily.copy()
-        # Datumsspalte vereinheitlichen
         if "date" in df.columns:
             df["Datum"] = pd.to_datetime(df["date"], errors="coerce")
         elif "Datum" in df.columns:
@@ -545,9 +512,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 autosize_columns(self.daily_views[region])
                 continue
 
-            # Sortierung: absteigend nach Datum
             sub = sub.sort_values("Datum", ascending=False).reset_index(drop=True)
-
             self.model_daily_by_region[region].setDataFrame(sub)
             autosize_columns(self.daily_views[region])
 
@@ -566,7 +531,6 @@ class MainWindow(QtWidgets.QMainWindow):
             df.to_csv(path, index=False)
 
     def show_stations_dialog(self):
-        """Öffnet ein Popup mit der verwendeten Stationenliste."""
         if self.df_stations.empty:
             QtWidgets.QMessageBox.information(self, "Verwendete Stationen", "Keine Stationenliste vorhanden.")
             return

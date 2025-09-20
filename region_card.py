@@ -1,215 +1,206 @@
 # region_card.py
 from __future__ import annotations
-from typing import List, Optional, Set
+from typing import Iterable, List, Optional, Set
 from PyQt6 import QtCore, QtGui, QtWidgets
-from style_utils import mac_default_font
-from color_config import color_for_temp_hex, load_config
 
-COLOR_GREY = "#6E6E73"
-COLOR_HOLIDAY = "#FF9500"
-COLOR_VACATION = "#FF3B30"
+from color_config import color_for_temp_hex
 
-def _fmt_pct_de(x: float | None) -> str:
-    if x is None:
-        return "—"
-    return f"{x:.1f}".replace(".", ",") + " %"
 
-def _q(hex_str: str) -> QtGui.QColor:
-    c = QtGui.QColor()
-    c.setNamedColor(hex_str)
-    return c
+def _fmt_temp(v: Optional[float]) -> str:
+    return "" if v is None else f"{v:.1f} °C"
 
-def _with_alpha(c: QtGui.QColor, a: int) -> QtGui.QColor:
-    out = QtGui.QColor(c); out.setAlpha(max(0, min(255, a))); return out
+def _fmt_precip(v: Optional[float]) -> str:
+    return "" if v is None else f"{v:.2f}"
 
-def _mix(c1: QtGui.QColor, c2: QtGui.QColor, t: float) -> QtGui.QColor:
-    t = max(0.0, min(1.0, t))
-    return QtGui.QColor(
-        int(round(c1.red()*(1-t)+c2.red()*t)),
-        int(round(c1.green()*(1-t)+c2.green()*t)),
-        int(round(c1.blue()*(1-t)+c2.blue()*t)),
-    )
-
-def _lighten(c: QtGui.QColor, factor: float = 0.25) -> QtGui.QColor:
-    return _mix(c, QtGui.QColor(255, 255, 255), factor)
+def _fmt_pct_de(v: Optional[float]) -> str:
+    return "" if v is None else f"{v:.1f} %"
 
 
 class RegionCard(QtWidgets.QFrame):
-    """Karte zeichnet (Gradient + Sparkline) im paintEvent und respektiert Farbeingaben aus settings.json."""
+    """Kachel pro Region mit Gradient, Sparkline, Texten und BL-Liste (Ferien/Feiertag farblich)."""
+
     def __init__(
         self,
         region: str,
-        states: List[str],
+        states: Iterable[str],
         temp_mean: Optional[float],
         precip_sum: Optional[float],
         stations_day_max: int,
         stations_total: int,
-        population_share_pct: Optional[float] = None,
-        vacation_states: Optional[Set[str]] = None,
-        holiday_states: Optional[Set[str]] = None,
-        spark_values: Optional[List[float]] = None,
+        population_share_pct: Optional[float],
+        vacation_states: Set[str],
+        holiday_states: Set[str],
+        spark_values: List[float],
         parent=None,
     ):
         super().__init__(parent)
         self.setObjectName("RegionCard")
+        self.setMinimumHeight(200)
+        self.setMaximumHeight(240)
+        self.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setAutoFillBackground(False)
 
-        # Daten
         self.region = region
-        self.states = states
-        self.temp_mean = float(temp_mean) if temp_mean is not None else None
-        self.precip_sum = float(precip_sum) if precip_sum is not None else None
+        self.states = list(states)
+        self.temp_mean = temp_mean
+        self.precip_sum = precip_sum
         self.stations_day_max = int(stations_day_max or 0)
         self.stations_total = int(stations_total or 0)
         self.population_share_pct = population_share_pct
-        self.vacation_states = set(vacation_states or set())
-        self.holiday_states = set(holiday_states or set())
-        self.spark_values: List[float] = [float(v) for v in (spark_values or []) if v is not None]
+        self.vacation_states = set(vacation_states)
+        self.holiday_states = set(holiday_states)
+        self.spark_values = list(spark_values or [])
 
-        # Farben aus Config
-        cfg = load_config()
-        base_hex = color_for_temp_hex(self.temp_mean, cfg)
-        self.base_bottom = _q(base_hex)                     # Kartenfarbe unten
-        self.base_top = _lighten(self.base_bottom, 0.25)    # oben heller
-        self.border_color = self.base_bottom.darker(115)
-
-        # Sparkline in gleicher Farbe, „umgedrehter“ Verlauf, Linie etwas dunkler
-        self.spark_line_color = self.base_bottom.darker(130)
-        self.spark_fill_top = _with_alpha(self.base_bottom.darker(140), 170)  # oben dunkler/kräftig
-        self.spark_fill_mid = _with_alpha(self.base_bottom, 90)
-        self.spark_fill_bot = _with_alpha(self.base_bottom, 25)               # unten transparent
-
-        # Layout (Inhalte)
-        root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14); root.setSpacing(10)
-
-        top = QtWidgets.QHBoxLayout(); top.setSpacing(18)
-
-        left = QtWidgets.QVBoxLayout(); left.setSpacing(6)
-        title = QtWidgets.QLabel(region); title.setProperty("cls", "title"); title.setFont(mac_default_font())
-        left.addWidget(title)
-
-        big_text = "—" if self.temp_mean is None else f"{self.temp_mean:.1f} °C"
-        big = QtWidgets.QLabel(big_text)
-        big.setFont(mac_default_font())
-        big.setStyleSheet("font-size:26px; font-weight:800; color:#FFFFFF;")
-        left.addWidget(big)
-
-        if self.precip_sum is None or float(self.precip_sum) <= 0.0:
-            sub_text = "Σ Niederschlag: —"
-            sub_style = "color:#FFFFFF;"
-        else:
-            sub_text = f"Σ Niederschlag: {self.precip_sum:.2f} mm"
-            sub_style = "color:#0A84FF; font-weight:600;"
-        sub = QtWidgets.QLabel(sub_text); sub.setStyleSheet(sub_style); sub.setFont(mac_default_font())
-        left.addWidget(sub)
-
-        line1 = QtWidgets.QLabel(f"max. Stationsanzahl/Tag: {self.stations_day_max}")
-        line1.setProperty("cls", "line"); line1.setFont(mac_default_font()); left.addWidget(line1)
-        line2 = QtWidgets.QLabel(f"berücksichtigte Stationen: {self.stations_total}")
-        line2.setProperty("cls", "line"); line2.setFont(mac_default_font()); left.addWidget(line2)
-        left.addStretch(1)
-
-        right = QtWidgets.QVBoxLayout(); right.setSpacing(6)
-        fragments = []
-        for s in self.states:
-            if s in self.vacation_states:
-                color = "#FF3B30"
-            elif s in self.holiday_states:
-                color = "#FF9500"
-            else:
-                color = "#EAEAEA"  # hellgrau auf dunklem BG
-            fragments.append(f'<span style="color:{color};">{s}</span>')
-        html = "<br>".join(fragments) if fragments else "—"
-        bl_list = QtWidgets.QLabel()
-        bl_list.setTextFormat(QtCore.Qt.TextFormat.RichText)
-        bl_list.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.NoTextInteraction)
-        bl_list.setText(f'<div style="text-align:right;">{html}</div>')
-        bl_list.setFont(mac_default_font())
-        bl_list.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignRight)
-        bl_list.setWordWrap(True)
-        right.addWidget(bl_list, 1)
-
-        pct = QtWidgets.QLabel(f"≈ {_fmt_pct_de(self.population_share_pct)} der Bevölkerung")
-        pct.setFont(mac_default_font()); pct.setStyleSheet("color:#FFFFFF;")
-        pct.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
-        right.addWidget(pct, 0, QtCore.Qt.AlignmentFlag.AlignRight)
-
-        top.addLayout(left, 2); top.addLayout(right, 1)
-        root.addLayout(top)
-
-        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(18); shadow.setOffset(0, 3); shadow.setColor(QtGui.QColor(0, 0, 0, 30))
-        self.setGraphicsEffect(shadow)
-
-        self.setStyleSheet(f"""
-            QFrame#RegionCard {{
-                border: 1px solid {self.border_color.name()};
+        self.setStyleSheet("""
+            QFrame#RegionCard {
                 border-radius: 14px;
-            }}
-            QLabel[cls="title"] {{ color:#FFFFFF; font-weight:700; }}
-            QLabel[cls="line"]  {{ color:#FFFFFF; }}
+                background: transparent;
+            }
+            QLabel { color: #FFFFFF; }
         """)
 
-    def set_spark_values(self, values: List[float] | None):
-        self.spark_values = [float(v) for v in (values or []) if v is not None]
-        self.update()
+        # Layout-Inhalte
+        layout = QtWidgets.QGridLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setHorizontalSpacing(12)
+        layout.setVerticalSpacing(6)
 
-    def paintEvent(self, e: QtGui.QPaintEvent) -> None:
-        super().paintEvent(e)
+        # Titel links oben
+        title = QtWidgets.QLabel(f"{region}")
+        f = title.font(); f.setPointSize(f.pointSize() + 2); f.setBold(True); title.setFont(f)
+
+        # Bundesländer rechts oben (RichText, farbig je Status)
+        bl = QtWidgets.QLabel(self._states_richtext())
+        bl.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop)
+        bl.setTextFormat(QtCore.Qt.TextFormat.RichText)
+
+        # Kennzahlen links
+        temp_lbl = QtWidgets.QLabel("Ø Temperatur")
+        temp_val = QtWidgets.QLabel(_fmt_temp(self.temp_mean))
+
+        prec_lbl = QtWidgets.QLabel("Σ Niederschlag")
+        prec_val = QtWidgets.QLabel(_fmt_precip(self.precip_sum))
+
+        st_lbl = QtWidgets.QLabel("max. Stationen/Tag")
+        st_val = QtWidgets.QLabel(str(self.stations_day_max))
+
+        st2_lbl = QtWidgets.QLabel("berücksichtigte Stationen")
+        st2_val = QtWidgets.QLabel(str(self.stations_total))
+
+        # Bevölkerung unten rechts
+        pct = QtWidgets.QLabel(f"≈ {_fmt_pct_de(self.population_share_pct)} der Bevölkerung")
+        pf = pct.font(); pf.setBold(True); pct.setFont(pf)
+        pct.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignBottom)
+
+        # Grid:
+        # Zeile 0: Titel (links), Bundesländer (rechts)
+        layout.addWidget(title, 0, 0, 1, 2)
+        layout.addWidget(bl,    0, 2, 2, 1)
+
+        # Zeilen 1..: Kennzahlen links, rechts bleibt BL / unten rechts Population
+        layout.addWidget(temp_lbl, 1, 0); layout.addWidget(temp_val, 1, 1)
+        layout.addWidget(prec_lbl, 2, 0); layout.addWidget(prec_val, 2, 1)
+        layout.addWidget(st_lbl,   3, 0); layout.addWidget(st_val,   3, 1)
+        layout.addWidget(st2_lbl,  4, 0); layout.addWidget(st2_val,  4, 1)
+
+        layout.addWidget(pct, 4, 2, 1, 1)
+
+    def _states_richtext(self) -> str:
+        # Ferien > Feiertag > neutral
+        lines = []
+        for s in self.states:
+            if s in self.vacation_states:
+                color = "#FF3B30"  # Rot
+            elif s in self.holiday_states:
+                color = "#FF9F0A"  # Orange
+            else:
+                color = "#D1D1D1"  # Hellgrau
+            lines.append(f'<span style="color:{color}">{QtGui.QGuiApplication.translate("", s)}</span>')
+        return "<br/>".join(lines)
+
+    # ---- Zeichenlogik ----
+    def paintEvent(self, e: QtGui.QPaintEvent):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
 
         r = self.rect().adjusted(1, 1, -1, -1)
-        rf = QtCore.QRectF(r)
-        radius = 14.0
+        radius = 14
 
-        # Hintergrund: oben heller → unten Basisfarbe
-        bg_path = QtGui.QPainterPath()
-        bg_path.addRoundedRect(rf, radius, radius)
-        grad_bg = QtGui.QLinearGradient(rf.topLeft(), rf.bottomLeft())
-        grad_bg.setColorAt(0.0, self.base_top)
-        grad_bg.setColorAt(1.0, self.base_bottom)
-        p.fillPath(bg_path, grad_bg)
+        # Farben aus Temperatur ableiten
+        base_hex = color_for_temp_hex(self.temp_mean)
+        base = QtGui.QColor(base_hex)
 
-        # Sparkline unten randlos
-        spark_h = max(64, int(rf.height() * 0.22))
-        sr = QtCore.QRectF(rf.left(), rf.bottom() - spark_h, rf.width(), float(spark_h))
+        # Unterkante (volle Sättigung), nach oben heller Verlauf
+        top = QtGui.QColor(base); top.setAlpha(220)
+        bottom = QtGui.QColor(base); bottom.setAlpha(255)
 
-        p.save(); p.setClipPath(bg_path)
-        if len(self.spark_values) >= 2:
-            vals = self.spark_values[-30:]
-            vmin, vmax = min(vals), max(vals)
-            if abs(vmax - vmin) < 1e-6:
-                vmax = vmin + 1.0
-            step = sr.width() / (len(vals) - 1)
+        grad_bg = QtGui.QLinearGradient(r.left(), r.top(), r.left(), r.bottom())
+        grad_bg.setColorAt(0.0, top.lighter(120))
+        grad_bg.setColorAt(1.0, bottom)
 
-            line_path = QtGui.QPainterPath()
-            for i, v in enumerate(vals):
-                x = sr.left() + i * step
-                y = sr.bottom() - (v - vmin) / (vmax - vmin) * sr.height()
-                if i == 0: line_path.moveTo(x, y)
-                else:      line_path.lineTo(x, y)
+        brush_bg = QtGui.QBrush(grad_bg)
+        path = QtGui.QPainterPath()
+        path.addRoundedRect(QtCore.QRectF(r), radius, radius)
+        p.fillPath(path, brush_bg)
 
-            fill_path = QtGui.QPainterPath(line_path)
-            fill_path.lineTo(sr.right(), sr.bottom())
-            fill_path.lineTo(sr.left(), sr.bottom())
-            fill_path.closeSubpath()
+        # Sparkline Fläche und Linie – volle Breite
+        if self.spark_values:
+            spark_rect = QtCore.QRectF(r.left() + 8, r.top() + 64, r.width() - 16, r.height() - 92)
 
-            grad_fill = QtGui.QLinearGradient(sr.topLeft(), sr.bottomLeft())
-            # „umgedrehter“ Verlauf: oben dunkler → unten transparenter (in Kartenfarbe)
-            grad_fill.setColorAt(0.00, self.spark_fill_top)
-            grad_fill.setColorAt(0.60, self.spark_fill_mid)
-            grad_fill.setColorAt(1.00, self.spark_fill_bot)
-            p.fillPath(fill_path, grad_fill)
+            vals = self.spark_values[:]
+            vmin = min(vals); vmax = max(vals)
+            if abs(vmax - vmin) < 1e-9:
+                vmax = vmin + 1.0  # degeneriert → flache Linie
 
-            pen = QtGui.QPen(self.spark_line_color, 2.0)
+            # Umgekehrter Verlauf: oben dunkler → unten heller
+            fill_top = QtGui.QColor(base.darker(130)); fill_top.setAlpha(120)
+            fill_bottom = QtGui.QColor(base.lighter(130)); fill_bottom.setAlpha(80)
+
+            grad_fill = QtGui.QLinearGradient(spark_rect.left(), spark_rect.top(), spark_rect.left(), spark_rect.bottom())
+            grad_fill.setColorAt(0.0, fill_top)
+            grad_fill.setColorAt(1.0, fill_bottom)
+
+            line_color = QtGui.QColor(base.darker(140)); line_color.setAlpha(220)
+
+            n = len(vals)
+            if n == 1:
+                xs = [spark_rect.left(), spark_rect.right()]
+                y = spark_rect.bottom() - (vals[0] - vmin) / (vmax - vmin) * spark_rect.height()
+                ys = [y, y]
+            else:
+                xs = [spark_rect.left() + i * (spark_rect.width() / (n - 1)) for i in range(n)]
+                ys = [spark_rect.bottom() - (v - vmin) / (vmax - vmin) * spark_rect.height() for v in vals]
+
+            # Fläche
+            poly = QtGui.QPolygonF()
+            if n == 1:
+                poly.append(QtCore.QPointF(xs[0], ys[0]))
+                poly.append(QtCore.QPointF(xs[1], ys[1]))
+                poly.append(QtCore.QPointF(xs[1], spark_rect.bottom()))
+                poly.append(QtCore.QPointF(xs[0], spark_rect.bottom()))
+            else:
+                for x, y in zip(xs, ys):
+                    poly.append(QtCore.QPointF(x, y))
+                poly.append(QtCore.QPointF(spark_rect.right(), spark_rect.bottom()))
+                poly.append(QtCore.QPointF(spark_rect.left(), spark_rect.bottom()))
+            p.setPen(QtCore.Qt.PenStyle.NoPen)
+            p.setBrush(QtGui.QBrush(grad_fill))
+            p.drawPolygon(poly)
+
+            # Linie
+            pen = QtGui.QPen(line_color, 2)
             p.setPen(pen)
-            p.drawPath(line_path)
-        else:
-            pen = QtGui.QPen(QtGui.QColor(255, 255, 255, 140), 2.0)
-            p.setPen(pen)
-            midy = sr.center().y()
-            p.drawLine(QtCore.QPointF(sr.left(), midy), QtCore.QPointF(sr.right(), midy))
-        p.restore()
+            if n == 1:
+                p.drawLine(int(xs[0]), int(ys[0]), int(xs[1]), int(ys[1]))
+            else:
+                path_line = QtGui.QPainterPath(QtCore.QPointF(xs[0], ys[0]))
+                for i in range(1, n):
+                    path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
+                p.drawPath(path_line)
+
+        # dünne innere Kontur
+        pen_border = QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 1)
+        p.setPen(pen_border)
+        p.drawRoundedRect(r, radius, radius)
+
+        super().paintEvent(e)
