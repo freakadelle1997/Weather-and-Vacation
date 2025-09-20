@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="Wetterdaten"
+APP_NAME="LCARSlite Weather and Vacation"
 ICON_ICNS="App.icns"     # falls nicht vorhanden: vorher aus icon.png erzeugen
 MAIN_PY="dwd_regions_gui.py"
 

@@ -6,7 +6,7 @@ from main_window import MainWindow
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("Wetterdaten")
+    app.setApplicationName("LCARSlite Weather and Vacation")
     w = MainWindow()
     w.show()
     sys.exit(app.exec())

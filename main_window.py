@@ -34,13 +34,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("DWD Regions")
+        # App-Name überall aktualisiert
+        self.setWindowTitle("LCARSlite Weather and Vacation")
         self.resize(1100, 840)
         self.setFont(mac_default_font())
 
         self.worker_thread: Optional[QtCore.QThread] = None
         self.worker: Optional[FetchWorker] = None
-        self.stations_dialog: Optional[StationsDialog] = None
 
         self._states_with_vacation = set()
         self._states_with_holiday = set()
@@ -90,27 +90,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_fetch = QtWidgets.QPushButton("Berechnen")
         self.btn_fetch.clicked.connect(self.on_fetch)
 
-        self.btn_cache = QtWidgets.QPushButton("🧹 Cache leeren")
-        self.btn_cache.clicked.connect(self.on_clear_cache)
-
         toolbar.addWidget(QtWidgets.QLabel("Start:"))
         toolbar.addWidget(self.start_input)
         toolbar.addSpacing(8)
         toolbar.addWidget(QtWidgets.QLabel("Ende:"))
         toolbar.addWidget(self.end_input)
         toolbar.addStretch(1)
-        toolbar.addWidget(self.btn_cache)
+        # Hinweis: Cache-Button & „Verwendete Stationen“-Button bewusst entfernt (nur Topbar)
         toolbar.addWidget(self.btn_fetch)
         vbox.addLayout(toolbar)
-
-        # ---------- Zeile 2: rechts nur „Verwendete Stationen“ ----------
-        row2 = QtWidgets.QHBoxLayout()
-        row2.addStretch(1)
-        self.btn_show_stations = QtWidgets.QPushButton("Verwendete Stationen")
-        self.btn_show_stations.clicked.connect(self.show_stations_dialog)
-        self.btn_show_stations.setVisible(False)
-        row2.addWidget(self.btn_show_stations, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
-        vbox.addLayout(row2)
 
         # ---------- Progress + Status ----------
         self.progress = QtWidgets.QProgressBar()
@@ -203,7 +191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         act_prefs.triggered.connect(self.open_color_settings)
         app_menu.addAction(act_prefs)
 
-        act_about = QtGui.QAction("Über DWD Regions", self)
+        act_about = QtGui.QAction("Über LCARSlite Weather and Vacation", self)
         act_about.setMenuRole(QtGui.QAction.MenuRole.AboutRole)
         act_about.triggered.connect(self._show_about)
         app_menu.addAction(act_about)
@@ -223,16 +211,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         data_menu.addSeparator()
 
-        # ✅ NEU: Cache leeren im Topbar-Menü
+        # Cache leeren (nur über Topbar)
         act_clear_cache = QtGui.QAction("Cache leeren", self)
         act_clear_cache.triggered.connect(self.on_clear_cache)
         data_menu.addAction(act_clear_cache)
 
     def _show_about(self):
         QtWidgets.QMessageBox.information(
-            self, "Über DWD Regions",
-            "DWD Regions\n\nMittelwerte für Temperatur und Niederschlag je Region\n"
-            "mit Ferien/Feiertag-Markierungen & Farbanpassung."
+            self, "Über LCARSlite Weather and Vacation",
+            "LCARSlite Weather and Vacation\n\n"
+            "Mittelwerte für Temperatur und Niederschlag je Region\n"
+            "mit Ferien/Feiertag-Markierungen, Farbanpassung und Sparkline."
         )
 
     # ---------- Farben-Dialog ----------
@@ -277,8 +266,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # UI reset
         self.btn_fetch.setEnabled(False)
-        self.btn_cache.setEnabled(False)
-        self.btn_show_stations.setVisible(False)
 
         self.progress.setVisible(True)
         self.progress.setValue(0)
@@ -370,8 +357,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.status_label.clear()
         self.btn_fetch.setEnabled(True)
-        self.btn_cache.setEnabled(True)
-        self.btn_show_stations.setVisible(not self.df_stations.empty)
 
     @QtCore.pyqtSlot(str)
     def on_error(self, msg: str):
@@ -379,7 +364,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.eta_timer.stop()
         self.progress.setVisible(False)
         self.btn_fetch.setEnabled(True)
-        self.btn_cache.setEnabled(True)
         self.status_label.setText("")
         QtWidgets.QMessageBox.critical(self, "Fehler beim Laden", msg)
 
