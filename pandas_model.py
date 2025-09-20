@@ -1,11 +1,11 @@
 # pandas_model.py
 from __future__ import annotations
+from typing import Optional, Dict, Any
 import pandas as pd
-from typing import Optional
 from PyQt6 import QtCore
 
 class PandasModel(QtCore.QAbstractTableModel):
-    def __init__(self, df: pd.DataFrame, formatters: Optional[dict] = None, parent=None):
+    def __init__(self, df: pd.DataFrame, formatters: Optional[Dict[str, Any]] = None, parent=None):
         super().__init__(parent)
         self._df = df.reset_index(drop=True).copy()
         self._formatters = formatters or {}

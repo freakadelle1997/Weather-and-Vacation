@@ -5,3 +5,5 @@ polars>=0.20
 pyinstaller>=6.6
 certifi>=2023.7.22
 tzdata
+holidays>=0.46
+requests>=2.31

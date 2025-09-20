@@ -2,7 +2,6 @@
 from __future__ import annotations
 from typing import Dict, List
 
-# Grobe Einwohnerzahlen (ca. Ende 2023, Destatis). Bei Bedarf einfach aktualisieren.
 BUNDESLAND_POP: Dict[str, int] = {
     "Baden-Württemberg": 11_310_000,
     "Bayern": 13_430_000,
@@ -21,13 +20,10 @@ BUNDESLAND_POP: Dict[str, int] = {
     "Schleswig-Holstein": 2_980_000,
     "Thüringen": 2_100_000,
 }
-
 TOTAL_POP = sum(BUNDESLAND_POP.values())
 
 def region_population(states: List[str]) -> int:
     return sum(BUNDESLAND_POP.get(s, 0) for s in states)
 
 def region_population_share(states: List[str]) -> float:
-    if TOTAL_POP == 0:
-        return 0.0
-    return region_population(states) / TOTAL_POP * 100.0
+    return (region_population(states) / TOTAL_POP * 100.0) if TOTAL_POP else 0.0

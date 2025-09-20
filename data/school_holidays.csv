@@ -1,0 +1,192 @@
+state,start_date,end_date,desc
+Baden-Württemberg,23.03.2024,05.04.2024,osterferien baden-württemberg 2024
+Baden-Württemberg,21.05.2024,31.05.2024,pfingstferien baden-württemberg 2024
+Baden-Württemberg,25.07.2024,07.09.2024,sommerferien baden-württemberg 2024
+Baden-Württemberg,28.10.2024,30.10.2024,herbstferien baden-württemberg 2024
+Baden-Württemberg,31.10.2024,31.10.2024,herbstferien baden-württemberg 2024 (beweglicher ferientag)
+Baden-Württemberg,23.12.2024,04.01.2025,weihnachtsferien baden-württemberg 2024
+Baden-Württemberg,14.04.2025,26.04.2025,osterferien baden-württemberg 2025
+Baden-Württemberg,10.06.2025,20.06.2025,pfingstferien baden-württemberg 2025
+Baden-Württemberg,31.07.2025,13.09.2025,sommerferien baden-württemberg 2025
+Baden-Württemberg,27.10.2025,30.10.2025,herbstferien baden-württemberg 2025
+Baden-Württemberg,31.10.2025,31.10.2025,herbstferien baden-württemberg 2025 (beweglicher ferientag)
+Baden-Württemberg,22.12.2025,05.01.2026,weihnachtsferien baden-württemberg 2025
+Baden-Württemberg,30.03.2026,12.04.2026,osterferien baden-württemberg 2026
+Baden-Württemberg,26.05.2026,06.06.2026,pfingstferien baden-württemberg 2026
+Baden-Württemberg,30.07.2026,13.09.2026,sommerferien baden-württemberg 2026
+Baden-Württemberg,26.10.2026,01.11.2026,herbstferien baden-württemberg 2026
+Baden-Württemberg,23.12.2026,10.01.2027,weihnachtsferien baden-württemberg 2026
+Bayern,12.02.2024,16.02.2024,winterferien bayern 2024
+Bayern,25.03.2024,06.04.2024,osterferien bayern 2024
+Bayern,21.05.2024,01.06.2024,pfingstferien bayern 2024
+Bayern,29.07.2024,09.09.2024,sommerferien bayern 2024
+Bayern,28.10.2024,31.10.2024,herbstferien bayern 2024
+Bayern,20.11.2024,20.11.2024,herbstferien bayern 2024 (beweglicher ferientag)
+Bayern,23.12.2024,03.01.2025,weihnachtsferien bayern 2024
+Bayern,03.03.2025,07.03.2025,winterferien bayern 2025
+Bayern,14.04.2025,25.04.2025,osterferien bayern 2025
+Bayern,10.06.2025,20.06.2025,pfingstferien bayern 2025
+Bayern,01.08.2025,15.09.2025,sommerferien bayern 2025
+Bayern,03.11.2025,07.11.2025,herbstferien bayern 2025
+Bayern,19.11.2025,19.11.2025,herbstferien bayern 2025 (beweglicher ferientag)
+Bayern,22.12.2025,05.01.2026,weihnachtsferien bayern 2025
+Berlin,05.02.2024,10.02.2024,winterferien berlin 2024
+Berlin,25.03.2024,05.04.2024,osterferien berlin 2024
+Berlin,10.05.2024,10.05.2024,pfingstferien berlin 2024 (beweglicher ferientag)
+Berlin,18.07.2024,30.08.2024,sommerferien berlin 2024
+Berlin,04.10.2024,04.10.2024,herbstferien berlin 2024 (beweglicher ferientag)
+Berlin,21.10.2024,02.11.2024,herbstferien berlin 2024
+Berlin,23.12.2024,31.12.2024,weihnachtsferien berlin 2024
+Berlin,03.02.2025,08.02.2025,winterferien berlin 2025
+Berlin,14.04.2025,25.04.2025,osterferien berlin 2025
+Berlin,02.05.2025,02.05.2025,osterferien berlin 2025 (beweglicher ferientag)
+Berlin,10.06.2025,10.06.2025,pfingstferien berlin 2025
+Berlin,24.07.2025,06.09.2025,sommerferien berlin 2025
+Berlin,20.10.2025,01.11.2025,herbstferien berlin 2025
+Berlin,22.12.2025,02.01.2026,weihnachtsferien berlin 2025
+Brandenburg,03.02.2025,08.02.2025,winterferien brandenburg 2025
+Brandenburg,14.04.2025,25.04.2025,osterferien brandenburg 2025
+Brandenburg,02.05.2025,02.05.2025,osterferien brandenburg 2025 (beweglicher ferientag)
+Brandenburg,10.06.2025,10.06.2025,pfingstferien brandenburg 2025
+Brandenburg,24.07.2025,06.09.2025,sommerferien brandenburg 2025
+Brandenburg,20.10.2025,01.11.2025,herbstferien brandenburg 2025
+Brandenburg,22.12.2025,02.01.2026,weihnachtsferien brandenburg 2025
+Hamburg,02.02.2024,02.02.2024,winterferien hamburg 2024 (beweglicher ferientag)
+Hamburg,18.03.2024,28.03.2024,osterferien hamburg 2024
+Hamburg,10.05.2024,10.05.2024,pfingstferien hamburg 2024 (beweglicher ferientag)
+Hamburg,21.05.2024,24.05.2024,pfingstferien hamburg 2024
+Hamburg,18.07.2024,28.08.2024,sommerferien hamburg 2024
+Hamburg,04.10.2024,04.10.2024,herbstferien hamburg 2024 (beweglicher ferientag)
+Hamburg,21.10.2024,01.11.2024,herbstferien hamburg 2024
+Hamburg,20.12.2024,03.01.2025,weihnachtsferien hamburg 2024
+Hamburg,31.01.2025,31.01.2025,winterferien hamburg 2025
+Hamburg,10.03.2025,21.03.2025,osterferien hamburg 2025
+Hamburg,02.05.2025,02.05.2025,pfingstferien hamburg 2025
+Hamburg,26.05.2025,30.05.2025,pfingstferien hamburg 2025 (beweglicher ferientag)
+Hamburg,24.07.2025,03.09.2025,sommerferien hamburg 2025
+Hamburg,20.10.2025,31.10.2025,herbstferien hamburg 2025
+Hamburg,17.12.2025,02.01.2026,weihnachtsferien hamburg 2025
+Hessen,25.03.2024,13.04.2024,osterferien hessen 2024
+Hessen,15.07.2024,24.08.2024,sommerferien hessen 2024
+Hessen,14.10.2024,26.10.2024,herbstferien hessen 2024
+Hessen,23.12.2024,11.01.2025,weihnachtsferien hessen 2024
+Hessen,07.04.2025,21.04.2025,osterferien hessen 2025
+Hessen,07.07.2025,15.08.2025,sommerferien hessen 2025
+Hessen,06.10.2025,18.10.2025,herbstferien hessen 2025
+Hessen,22.12.2025,10.01.2026,weihnachtsferien hessen 2025
+Hessen,30.03.2026,10.04.2026,osterferien hessen 2026
+Hessen,29.06.2026,07.08.2026,sommerferien hessen 2026
+Hessen,05.10.2026,17.10.2026,herbstferien hessen 2026
+Hessen,23.12.2026,12.01.2027,weihnachtsferien hessen 2026
+Hessen,22.03.2027,02.04.2027,osterferien hessen 2027
+Hessen,28.06.2027,06.08.2027,sommerferien hessen 2027
+Hessen,04.10.2027,16.10.2027,herbstferien hessen 2027
+Hessen,23.12.2027,11.01.2028,weihnachtsferien hessen 2027
+Hessen,03.04.2028,14.04.2028,osterferien hessen 2028
+Hessen,03.07.2028,11.08.2028,sommerferien hessen 2028
+Hessen,09.10.2028,20.10.2028,herbstferien hessen 2028
+Hessen,27.12.2028,12.01.2029,weihnachtsferien hessen 2028
+Hessen,29.03.2029,13.04.2029,osterferien hessen 2029
+Hessen,16.07.2029,24.08.2029,sommerferien hessen 2029
+Hessen,15.10.2029,26.10.2029,herbstferien hessen 2029
+Hessen,24.12.2029,11.01.2030,weihnachtsferien hessen 2029
+Hessen,08.04.2030,22.04.2030,osterferien hessen 2030
+Hessen,22.07.2030,30.08.2030,sommerferien hessen 2030
+Mecklenburg-Vorpommern,05.02.2024,16.02.2024,winterferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,25.03.2024,03.04.2024,osterferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,10.05.2024,10.05.2024,pfingstferien mecklenburg-vorpommern 2024 (beweglicher ferientag)
+Mecklenburg-Vorpommern,17.05.2024,21.05.2024,pfingstferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,22.07.2024,31.08.2024,sommerferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,04.10.2024,04.10.2024,herbstferien mecklenburg-vorpommern 2024 (beweglicher ferientag)
+Mecklenburg-Vorpommern,21.10.2024,26.10.2024,herbstferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,23.12.2024,06.01.2025,weihnachtsferien mecklenburg-vorpommern 2024
+Mecklenburg-Vorpommern,03.02.2025,14.02.2025,winterferien mecklenburg-vorpommern 2025
+Mecklenburg-Vorpommern,14.04.2025,23.04.2025,osterferien mecklenburg-vorpommern 2025
+Mecklenburg-Vorpommern,30.05.2025,30.05.2025,osterferien mecklenburg-vorpommern 2025 (beweglicher ferientag)
+Mecklenburg-Vorpommern,06.06.2025,10.06.2025,pfingstferien mecklenburg-vorpommern 2025
+Mecklenburg-Vorpommern,28.07.2025,06.09.2025,sommerferien mecklenburg-vorpommern 2025
+Mecklenburg-Vorpommern,02.10.2025,02.10.2025,herbstferien mecklenburg-vorpommern 2025
+Mecklenburg-Vorpommern,20.10.2025,25.10.2025,herbstferien mecklenburg-vorpommern 2025 (beweglicher ferientag)
+Mecklenburg-Vorpommern,22.12.2025,05.01.2026,weihnachtsferien mecklenburg-vorpommern 2025
+Nordrhein-Westfalen,25.03.2024,06.04.2024,osterferien nordrhein-westfalen 2024
+Nordrhein-Westfalen,21.05.2024,21.05.2024,pfingstferien nordrhein-westfalen 2024 (beweglicher ferientag)
+Nordrhein-Westfalen,08.07.2024,20.08.2024,sommerferien nordrhein-westfalen 2024
+Nordrhein-Westfalen,14.10.2024,26.10.2024,herbstferien nordrhein-westfalen 2024
+Nordrhein-Westfalen,23.12.2024,06.01.2025,weihnachtsferien nordrhein-westfalen 2024
+Nordrhein-Westfalen,14.04.2025,26.04.2025,osterferien nordrhein-westfalen 2025
+Nordrhein-Westfalen,10.06.2025,10.06.2025,pfingstferien nordrhein-westfalen 2025
+Nordrhein-Westfalen,14.07.2025,26.08.2025,sommerferien nordrhein-westfalen 2025
+Nordrhein-Westfalen,13.10.2025,25.10.2025,herbstferien nordrhein-westfalen 2025
+Nordrhein-Westfalen,22.12.2025,06.01.2026,weihnachtsferien nordrhein-westfalen 2025
+Nordrhein-Westfalen,30.03.2026,10.04.2026,osterferien nordrhein-westfalen 2026
+Nordrhein-Westfalen,26.05.2026,26.05.2026,pfingstferien nordrhein-westfalen 2026
+Nordrhein-Westfalen,20.07.2026,01.09.2026,sommerferien nordrhein-westfalen 2026
+Nordrhein-Westfalen,19.10.2026,30.10.2026,herbstferien nordrhein-westfalen 2026
+Nordrhein-Westfalen,23.12.2026,06.01.2027,weihnachtsferien nordrhein-westfalen 2026
+Nordrhein-Westfalen,22.03.2027,02.04.2027,osterferien nordrhein-westfalen 2027
+Nordrhein-Westfalen,18.05.2027,18.05.2027,pfingstferien nordrhein-westfalen 2027
+Nordrhein-Westfalen,19.07.2027,31.08.2027,sommerferien nordrhein-westfalen 2027
+Nordrhein-Westfalen,25.10.2027,05.11.2027,herbstferien nordrhein-westfalen 2027
+Nordrhein-Westfalen,24.12.2027,07.01.2028,weihnachtsferien nordrhein-westfalen 2027
+Nordrhein-Westfalen,10.04.2028,21.04.2028,osterferien nordrhein-westfalen 2028
+Nordrhein-Westfalen,10.07.2028,22.08.2028,sommerferien nordrhein-westfalen 2028
+Nordrhein-Westfalen,23.10.2028,03.11.2028,herbstferien nordrhein-westfalen 2028
+Nordrhein-Westfalen,21.12.2028,05.01.2029,weihnachtsferien nordrhein-westfalen 2028
+Nordrhein-Westfalen,26.03.2029,06.04.2029,osterferien nordrhein-westfalen 2029
+Nordrhein-Westfalen,22.05.2029,22.05.2029,pfingstferien nordrhein-westfalen 2029
+Nordrhein-Westfalen,02.07.2029,14.08.2029,sommerferien nordrhein-westfalen 2029
+Nordrhein-Westfalen,15.10.2029,26.10.2029,herbstferien nordrhein-westfalen 2029
+Nordrhein-Westfalen,20.12.2029,04.01.2030,weihnachtsferien nordrhein-westfalen 2029
+Rheinland-Pfalz,25.03.2024,02.04.2024,osterferien rheinland-pfalz 2024
+Rheinland-Pfalz,21.05.2024,29.05.2024,pfingstferien rheinland-pfalz 2024
+Rheinland-Pfalz,15.07.2024,23.08.2024,sommerferien rheinland-pfalz 2024
+Rheinland-Pfalz,14.10.2024,25.10.2024,herbstferien rheinland-pfalz 2024
+Rheinland-Pfalz,23.12.2024,08.01.2025,weihnachtsferien rheinland-pfalz 2024
+Rheinland-Pfalz,14.04.2025,25.04.2025,osterferien rheinland-pfalz 2025
+Rheinland-Pfalz,07.07.2025,15.08.2025,sommerferien rheinland-pfalz 2025
+Rheinland-Pfalz,13.10.2025,24.10.2025,herbstferien rheinland-pfalz 2025
+Rheinland-Pfalz,22.12.2025,07.01.2026,weihnachtsferien rheinland-pfalz 2025
+Saarland,12.02.2024,16.02.2024,winterferien saarland 2024
+Saarland,25.03.2024,05.04.2024,osterferien saarland 2024
+Saarland,21.05.2024,24.05.2024,pfingstferien saarland 2024
+Saarland,15.07.2024,23.08.2024,sommerferien saarland 2024
+Saarland,14.10.2024,25.10.2024,herbstferien saarland 2024
+Saarland,23.12.2024,03.01.2025,weihnachtsferien saarland 2024
+Sachsen,12.02.2024,23.02.2024,winterferien sachsen 2024
+Sachsen,28.03.2024,05.04.2024,osterferien sachsen 2024
+Sachsen,10.05.2024,10.05.2024,pfingstferien sachsen 2024 (beweglicher ferientag)
+Sachsen,18.05.2024,21.05.2024,pfingstferien sachsen 2024
+Sachsen,20.06.2024,02.08.2024,sommerferien sachsen 2024
+Sachsen,07.10.2024,19.10.2024,herbstferien sachsen 2024
+Sachsen,23.12.2024,03.01.2025,weihnachtsferien sachsen 2024
+Sachsen,17.02.2025,01.03.2025,winterferien sachsen 2025
+Sachsen,18.04.2025,25.04.2025,osterferien sachsen 2025
+Sachsen,30.05.2025,30.05.2025,osterferien sachsen 2025 (beweglicher ferientag)
+Sachsen,28.06.2025,08.08.2025,sommerferien sachsen 2025
+Sachsen,06.10.2025,18.10.2025,herbstferien sachsen 2025
+Sachsen,22.12.2025,02.01.2026,weihnachtsferien sachsen 2025
+Sachsen,08.02.2027,19.02.2027,winterferien sachsen 2027
+Sachsen,26.03.2027,02.04.2027,osterferien sachsen 2027
+Sachsen,07.05.2027,07.05.2027,pfingsferien sachsen 2027 (beweglicher ferientag)
+Sachsen,15.05.2027,18.05.2027,pfingsferien sachsen 2027
+Sachsen,10.07.2027,20.08.2027,sommerferien sachsen 2027
+Sachsen,11.10.2027,23.10.2027,herbstferien sachsen 2027
+Sachsen,23.12.2027,01.01.2028,weihnachtsferien sachsen 2027
+Sachsen,14.02.2028,26.02.2028,winterferien sachsen 2028
+Sachsen,14.04.2028,22.04.2028,osterferien sachsen 2028
+Sachsen,26.05.2028,26.05.2028,osterferien sachsen 2028 (beweglicher ferientag)
+Sachsen,22.07.2028,01.09.2028,sommerferien sachsen 2028
+Sachsen,23.10.2028,03.11.2028,herbstferien sachsen 2028
+Sachsen,23.12.2028,03.01.2029,weihnachtsferien sachsen 2028
+Schleswig-Holstein,02.04.2024,19.04.2024,osterferien schleswig-holstein 2024
+Schleswig-Holstein,10.05.2024,11.05.2024,pfingstferien schleswig-holstein 2024
+Schleswig-Holstein,22.07.2024,31.08.2024,sommerferien schleswig-holstein 2024
+Schleswig-Holstein,04.10.2024,04.10.2024,herbstferien schleswig-holstein 2024 (beweglicher ferientag)
+Schleswig-Holstein,21.10.2024,01.11.2024,herbstferien schleswig-holstein 2024
+Schleswig-Holstein,19.12.2024,07.01.2025,weihnachtsferien schleswig-holstein 2024
+Thüringen,03.02.2025,08.02.2025,winterferien thüringen 2025
+Thüringen,07.04.2025,19.04.2025,osterferien thüringen 2025
+Thüringen,30.05.2025,30.05.2025,pfingstferien thüringen 2025
+Thüringen,28.06.2025,08.08.2025,sommerferien thüringen 2025
+Thüringen,06.10.2025,18.10.2025,herbstferien thüringen 2025
+Thüringen,22.12.2025,03.01.2026,weihnachtsferien thüringen 2025

@@ -1,28 +1,15 @@
 # app.py
 from __future__ import annotations
-import sys, os
+import sys
 from PyQt6 import QtWidgets
-from single_instance import acquire_single_instance_lock
-from logging_excepthook import install_excepthook
 from main_window import MainWindow
 
 def main():
-    lock_fd = acquire_single_instance_lock()
-    if lock_fd is None:
-        return
-
-    install_excepthook()
     app = QtWidgets.QApplication(sys.argv)
-    app.setApplicationName("DWD Regions")
+    app.setApplicationName("Wetterdaten")
     w = MainWindow()
     w.show()
-    code = app.exec()
-
-    try:
-        os.close(lock_fd)
-    except Exception:
-        pass
-    sys.exit(code)
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
