@@ -255,7 +255,8 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Fehler", f"Cache konnte nicht gelöscht werden:\n{e}")
 
     def on_fetch(self):
-        if isinstance(self.worker_thread, QtCore.QThread) and self.worker_thread.isRunning():
+        # Niemals zweiten Worker parallel starten
+        if isinstance(getattr(self, "worker_thread", None), QtCore.QThread) and self.worker_thread.isRunning():
             return
         try:
             s = parse_german_date(self.start_input.text())
@@ -358,6 +359,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label.clear()
         self.btn_fetch.setEnabled(True)
 
+        # Thread-Refs aufräumen (Sicherheitsnetz)
+        self.worker_thread = None
+        self.worker = None
+
     @QtCore.pyqtSlot(str)
     def on_error(self, msg: str):
         self._eta_active = False
@@ -366,6 +371,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_fetch.setEnabled(True)
         self.status_label.setText("")
         QtWidgets.QMessageBox.critical(self, "Fehler beim Laden", msg)
+
+        # Thread-Refs aufräumen (Sicherheitsnetz)
+        self.worker_thread = None
+        self.worker = None
 
     # ---------- Dialoge ----------
     def show_stations_dialog(self):
@@ -458,3 +467,25 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             r, c = positions[idx]
             self.cards_layout.addWidget(card, r, c)
+
+    # ---------- Sauberes Beenden ----------
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        # ETA-Timer stoppen
+        try:
+            if hasattr(self, "eta_timer") and self.eta_timer.isActive():
+                self.eta_timer.stop()
+        except Exception:
+            pass
+        # Worker-Thread sauber beenden
+        try:
+            t = getattr(self, "worker_thread", None)
+            if t is not None and isinstance(t, QtCore.QThread):
+                if t.isRunning():
+                    t.requestInterruption()
+                    t.quit()
+                    t.wait(5000)
+                self.worker_thread = None
+                self.worker = None
+        except Exception:
+            pass
+        event.accept()
