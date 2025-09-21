@@ -114,6 +114,7 @@ class RegionCard(QtWidgets.QFrame):
         self.pct_label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
     def _states_richtext(self) -> str:
+        """Bundesländer farblich: Ferien rot, Feiertag orange, sonst hellgrau."""
         lines = []
         for s in self.states:
             if s in self.vacation_states:
@@ -180,31 +181,39 @@ class RegionCard(QtWidgets.QFrame):
 
             poly = QtGui.QPolygonF()
             if n == 1:
-                poly.append(QtCore.QPointF(xs[0], ys[0])); poly.append(QtCore.QPointF(xs[1], ys[1]))
-                poly.append(QtCore.QPointF(xs[1], spark_rect.bottom())); poly.append(QtCore.QPointF(xs[0], spark_rect.bottom()))
+                poly.append(QtCore.QPointF(xs[0], ys[0]))
+                poly.append(QtCore.QPointF(xs[1], ys[1]))
+                poly.append(QtCore.QPointF(xs[1], spark_rect.bottom()))
+                poly.append(QtCore.QPointF(xs[0], spark_rect.bottom()))
             else:
-                for x, y in zip(xs, ys): poly.append(QtCore.QPointF(x, y))
+                for x, y in zip(xs, ys):
+                    poly.append(QtCore.QPointF(x, y))
                 poly.append(QtCore.QPointF(spark_rect.right(), spark_rect.bottom()))
                 poly.append(QtCore.QPointF(spark_rect.left(), spark_rect.bottom()))
-            p.setPen(QtCore.Qt.PenStyle.NoPen); p.setBrush(QtGui.QBrush(grad_fill)); p.drawPolygon(poly)
+            p.setPen(QtCore.Qt.PenStyle.NoPen)
+            p.setBrush(QtGui.QBrush(grad_fill))
+            p.drawPolygon(poly)
 
-            pen = QtGui.QPen(line_color, 2); p.setPen(pen)
+            pen = QtGui.QPen(line_color, 2)
+            p.setPen(pen)
             if n == 1:
                 p.drawLine(int(xs[0]), int(ys[0]), int(xs[1]), int(ys[1]))
             else:
                 path_line = QtGui.QPainterPath(QtCore.QPointF(xs[0], ys[0]))
-                for i in range(1, n): path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
+                for i in range(1, n):
+                    path_line.lineTo(QtCore.QPointF(xs[i], ys[i]))
                 p.drawPath(path_line)
 
         pen_border = QtGui.QPen(QtGui.QColor(255, 255, 255, 50), 1)
-        p.setPen(pen_border); p.drawRoundedRect(r, radius, radius)
+        p.setPen(pen_border)
+        p.drawRoundedRect(r, radius, radius)
         super().paintEvent(e)
 
     # Overlays platzieren (entkoppelt vom Layout)
     def resizeEvent(self, e: QtGui.QResizeEvent):
         r = self.rect().adjusted(SIDE_PAD, SIDE_PAD, -SIDE_PAD, -SIDE_PAD)
 
-        # BL-Box oben rechts – max. 40% Breite, 2 Zeilen Höhe genügt (WordWrap)
+        # BL-Box oben rechts – max. 40% Breite, WordWrap
         w = max(160, int(r.width() * 0.38))
         self.bl_label.setFixedWidth(w)
         h = self.bl_label.sizeHint().height()

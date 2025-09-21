@@ -19,7 +19,6 @@ from color_settings_dialog import ColorSettingsDialog  # Preferences dialog
 
 DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{4}$")
 
-
 def parse_german_date(s: str) -> dt.date:
     s = s.strip()
     if not DATE_RE.match(s):
@@ -29,12 +28,10 @@ def parse_german_date(s: str) -> dt.date:
     except Exception:
         raise ValueError("Ungültiges Datum (z. B. 31.02.2023).")
 
-
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
 
-        # App-Name überall aktualisiert
         self.setWindowTitle("LCARSlite Weather and Vacation")
         self.resize(1100, 840)
         self.setFont(mac_default_font())
@@ -56,7 +53,6 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
 
-        # Native macOS-Menü (Topbar)
         self._build_menubar()
 
         central = QtWidgets.QWidget()
@@ -65,10 +61,8 @@ class MainWindow(QtWidgets.QMainWindow):
         vbox.setContentsMargins(16, 16, 16, 16)
         vbox.setSpacing(12)
 
-        # ---------- Toolbar ----------
-        toolbar = QtWidgets.QHBoxLayout()
-        toolbar.setSpacing(8)
-
+        # Toolbar
+        toolbar = QtWidgets.QHBoxLayout(); toolbar.setSpacing(8)
         yesterday_str = (dt.date.today() - dt.timedelta(days=1)).strftime("%d.%m.%Y")
 
         self.start_input = QtWidgets.QLineEdit()
@@ -96,11 +90,10 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar.addWidget(QtWidgets.QLabel("Ende:"))
         toolbar.addWidget(self.end_input)
         toolbar.addStretch(1)
-        # Hinweis: Cache-Button & „Verwendete Stationen“-Button bewusst entfernt (nur Topbar)
         toolbar.addWidget(self.btn_fetch)
         vbox.addLayout(toolbar)
 
-        # ---------- Progress + Status ----------
+        # Progress + Status
         self.progress = QtWidgets.QProgressBar()
         self.progress.setTextVisible(True)
         self.progress.setFormat("⏳ Bereit")
@@ -112,7 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label.setStyleSheet("color:#6e6e73;")
         vbox.addWidget(self.status_label)
 
-        # ---------- Tabs ----------
+        # Tabs
         self.tabs = QtWidgets.QTabWidget()
         vbox.addWidget(self.tabs)
 
@@ -165,7 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.df_summary = pd.DataFrame()
         self.df_daily = pd.DataFrame()
         self.df_stations = pd.DataFrame()
-        self.df_spark = pd.DataFrame()  # 30 Tage (pro Region)
+        self.df_spark = pd.DataFrame()
 
         # ETA
         self.eta_timer = QtCore.QTimer(self)
@@ -177,17 +170,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._eta_done_steps = 0
         self._eta_total_steps = 0
 
-    # ---------- macOS-Menü ----------
+    # Menüs
     def _build_menubar(self):
         mb = self.menuBar()
         mb.setNativeMenuBar(True)
 
-        # App-Menü (erstes Menü wird auf macOS zum App-Menü)
         app_menu = mb.addMenu(self.windowTitle())
-
         act_prefs = QtGui.QAction("Einstellungen …", self)
         act_prefs.setMenuRole(QtGui.QAction.MenuRole.PreferencesRole)
-        act_prefs.setShortcut(QtGui.QKeySequence.StandardKey.Preferences)  # ⌘,
+        act_prefs.setShortcut(QtGui.QKeySequence.StandardKey.Preferences)
         act_prefs.triggered.connect(self.open_color_settings)
         app_menu.addAction(act_prefs)
 
@@ -198,20 +189,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         act_quit = QtGui.QAction("Beenden", self)
         act_quit.setMenuRole(QtGui.QAction.MenuRole.QuitRole)
-        act_quit.setShortcut(QtGui.QKeySequence.StandardKey.Quit)  # ⌘Q
+        act_quit.setShortcut(QtGui.QKeySequence.StandardKey.Quit)
         act_quit.triggered.connect(QtWidgets.QApplication.instance().quit)
         app_menu.addAction(act_quit)
 
-        # Daten-Menü
         data_menu = mb.addMenu("Daten")
-
         act_stations = QtGui.QAction("Verwendete Stationen …", self)
         act_stations.triggered.connect(self.show_stations_dialog)
         data_menu.addAction(act_stations)
-
         data_menu.addSeparator()
-
-        # Cache leeren (nur über Topbar)
         act_clear_cache = QtGui.QAction("Cache leeren", self)
         act_clear_cache.triggered.connect(self.on_clear_cache)
         data_menu.addAction(act_clear_cache)
@@ -224,7 +210,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "mit Ferien/Feiertag-Markierungen, Farbanpassung und Sparkline."
         )
 
-    # ---------- Farben-Dialog ----------
     def open_color_settings(self):
         dlg = ColorSettingsDialog(self)
         if dlg.exec() == QtWidgets.QDialog.DialogCode.Accepted:
@@ -232,17 +217,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self.build_summary_cards(self.df_summary, spark_map)
             self.cards_container.update()
 
-    # ---------- Ferien/Feiertage vorberechnen ----------
+    # Ferien/Feiertage + Bevölkerungsanteil
     def _update_free_share(self, s: dt.date, e: dt.date):
-        vac, hol = union_affected_states(s, e)
-        self._states_with_vacation = set(vac)
-        self._states_with_holiday = set(hol)
-        self._states_free_union = set(vac).union(hol)
+        ferien, feiertag = union_affected_states(s, e)
+        self._states_with_vacation = set(ferien)
+        self._states_with_holiday = set(feiertag)
+        self._states_free_union = self._states_with_vacation.union(self._states_with_holiday)
 
         pop = sum(BUNDESLAND_POP.get(bl, 0) for bl in self._states_free_union)
         self._free_share_pct = (pop / TOTAL_POP * 100.0) if TOTAL_POP > 0 else 0.0
 
-    # ---------- Aktionen ----------
+    # Aktionen
     def on_clear_cache(self):
         cache_dir = QtCore.QDir.toNativeSeparators(Settings(cache_disable=False).cache_dir)
         try:
@@ -255,7 +240,6 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Fehler", f"Cache konnte nicht gelöscht werden:\n{e}")
 
     def on_fetch(self):
-        # Niemals zweiten Worker parallel starten
         if isinstance(getattr(self, "worker_thread", None), QtCore.QThread) and self.worker_thread.isRunning():
             return
         try:
@@ -265,9 +249,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Datum", str(ex))
             return
 
-        # UI reset
         self.btn_fetch.setEnabled(False)
-
         self.progress.setVisible(True)
         self.progress.setValue(0)
         self.progress.setFormat("⏳ Starte …")
@@ -279,7 +261,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.free_share_label.setVisible(False)
 
-        # ETA
         self._eta_start_time = time.perf_counter()
         self._eta_done_steps = 0
         self._eta_total_steps = 1 + len(REGIONS)
@@ -287,6 +268,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._eta_active = True
         self.eta_timer.start()
 
+        # Ferien/Feiertage vorberechnen (für Anzeige)
         self._update_free_share(s, e)
 
         # Worker
@@ -331,7 +313,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.progress.setFormat(self._eta_text())
 
-    # ---------- Ergebnisse ----------
     @QtCore.pyqtSlot(pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame)
     def on_finished(self, summary: pd.DataFrame, daily: pd.DataFrame, stations: pd.DataFrame, spark_30d: pd.DataFrame):
         self._eta_active = False
@@ -344,7 +325,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.df_spark = spark_30d.copy()
 
         self.update_daily_tabs(self.df_daily)
-
         spark_map = self._build_spark_map_from_df(self.df_spark)
         self.build_summary_cards(self.df_summary, spark_map)
 
@@ -359,7 +339,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_label.clear()
         self.btn_fetch.setEnabled(True)
 
-        # Thread-Refs aufräumen (Sicherheitsnetz)
         self.worker_thread = None
         self.worker = None
 
@@ -371,12 +350,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_fetch.setEnabled(True)
         self.status_label.setText("")
         QtWidgets.QMessageBox.critical(self, "Fehler beim Laden", msg)
-
-        # Thread-Refs aufräumen (Sicherheitsnetz)
         self.worker_thread = None
         self.worker = None
 
-    # ---------- Dialoge ----------
     def show_stations_dialog(self):
         if self.df_stations.empty:
             QtWidgets.QMessageBox.information(self, "Stationen", "Keine Stationenliste vorhanden.")
@@ -384,7 +360,6 @@ class MainWindow(QtWidgets.QMainWindow):
         dlg = StationsDialog(self.df_stations, self)
         dlg.exec()
 
-    # ---------- Tägliche Tabs ----------
     def update_daily_tabs(self, df_daily: pd.DataFrame):
         if df_daily is None or df_daily.empty:
             for region in REGION_ORDER:
@@ -411,7 +386,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.model_daily_by_region[region].setDataFrame(sub)
             autosize_columns(self.daily_views[region])
 
-    # ---------- Karten ----------
     def _build_spark_map_from_df(self, df: pd.DataFrame) -> Dict[str, List[float]]:
         out: Dict[str, List[float]] = {r: [] for r in REGION_ORDER}
         if df is None or df.empty:
@@ -448,8 +422,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 stations_day_max = int(sub["max. Stationsanzahl/Tag"].fillna(0).iloc[0]) if "max. Stationsanzahl/Tag" in sub.columns else 0
                 stations_total = int(sub["berücksichtigte Stationen (Anzahl)"].fillna(0).iloc[0]) if "berücksichtigte Stationen (Anzahl)" in sub.columns else 0
 
-            pop_share = region_population_share(region)
             states_in_region = REGIONS[region]
+            pop_share = region_population_share(states_in_region)
             vac = set(states_in_region).intersection(self._states_with_vacation)
             hol = set(states_in_region).intersection(self._states_with_holiday)
 
@@ -468,15 +442,12 @@ class MainWindow(QtWidgets.QMainWindow):
             r, c = positions[idx]
             self.cards_layout.addWidget(card, r, c)
 
-    # ---------- Sauberes Beenden ----------
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
-        # ETA-Timer stoppen
         try:
             if hasattr(self, "eta_timer") and self.eta_timer.isActive():
                 self.eta_timer.stop()
         except Exception:
             pass
-        # Worker-Thread sauber beenden
         try:
             t = getattr(self, "worker_thread", None)
             if t is not None and isinstance(t, QtCore.QThread):
